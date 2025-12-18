@@ -6,8 +6,8 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 cd "$ROOT_DIR"
 
-# Build release binary
-cargo build --release
+# Install charmer binary
+cargo install --path crates/charmer
 
 # Clean and start the test pipeline
 pixi run clean-test
