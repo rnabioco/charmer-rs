@@ -222,17 +222,80 @@ impl App {
         self.open_log_viewer();
     }
 
+    /// Find the best log file path for a job.
+    fn find_log_path(&self, job: &charmer_state::Job) -> String {
+        let working_dir = &self.state.working_dir;
+
+        // Try log files from snakemake metadata first
+        for log_file in &job.log_files {
+            let full_path = working_dir.join(log_file);
+            if full_path.exists() {
+                return full_path.to_string();
+            }
+            // Also try as-is (might be absolute)
+            if std::path::Path::new(log_file).exists() {
+                return log_file.clone();
+            }
+        }
+
+        // Try SLURM log path format: .snakemake/slurm_logs/rule_{rule}/{slurm_job_id}.log
+        if let Some(ref slurm_id) = job.slurm_job_id {
+            let slurm_log = working_dir
+                .join(".snakemake")
+                .join("slurm_logs")
+                .join(format!("rule_{}", job.rule))
+                .join(format!("{}.log", slurm_id));
+            if slurm_log.exists() {
+                return slurm_log.to_string();
+            }
+        }
+
+        // Try common log directory patterns
+        let wildcards_suffix = job
+            .wildcards
+            .as_ref()
+            .map(|w| {
+                // Extract just the values, e.g., "sample=sample1, chrom=chr1" -> "sample1"
+                w.split(',')
+                    .next()
+                    .and_then(|s| s.split('=').nth(1))
+                    .unwrap_or("")
+            })
+            .unwrap_or("");
+
+        // Try logs/{rule}/{wildcard}.log
+        if !wildcards_suffix.is_empty() {
+            let pattern_log = working_dir
+                .join("logs")
+                .join(&job.rule)
+                .join(format!("{}.log", wildcards_suffix));
+            if pattern_log.exists() {
+                return pattern_log.to_string();
+            }
+        }
+
+        // Try logs/{rule}.log
+        let rule_log = working_dir.join("logs").join(format!("{}.log", job.rule));
+        if rule_log.exists() {
+            return rule_log.to_string();
+        }
+
+        // Fallback: return a path that shows what we're looking for
+        if !job.log_files.is_empty() {
+            working_dir.join(&job.log_files[0]).to_string()
+        } else {
+            working_dir
+                .join("logs")
+                .join(&job.rule)
+                .join(format!("{}.log", wildcards_suffix))
+                .to_string()
+        }
+    }
+
     /// Open log viewer for the currently selected job.
     fn open_log_viewer(&mut self) {
-        if let Some(job) = self.selected_job() {
-            // Try to find a log file for this job
-            let log_path = if !job.log_files.is_empty() {
-                // Use the first log file from snakemake metadata
-                job.log_files[0].clone()
-            } else {
-                // Fallback: try .snakemake/log/{rule}.log
-                format!(".snakemake/log/{}.log", job.rule)
-            };
+        if let Some(job) = self.selected_job().cloned() {
+            let log_path = self.find_log_path(&job);
 
             let mut state = LogViewerState::new(log_path, 1000);
             state.follow_mode = true; // Enable follow mode by default for panel view
@@ -243,12 +306,8 @@ impl App {
 
     /// Update log viewer to show the currently selected job's logs.
     fn update_log_viewer_for_selected(&mut self) {
-        if let Some(job) = self.selected_job() {
-            let log_path = if !job.log_files.is_empty() {
-                job.log_files[0].clone()
-            } else {
-                format!(".snakemake/log/{}.log", job.rule)
-            };
+        if let Some(job) = self.selected_job().cloned() {
+            let log_path = self.find_log_path(&job);
 
             let mut state = LogViewerState::new(log_path, 1000);
             state.follow_mode = true;
