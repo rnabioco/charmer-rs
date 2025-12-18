@@ -280,6 +280,11 @@ impl App {
             return rule_log.to_string();
         }
 
+        // Try main snakemake log as fallback (most recent .snakemake.log file)
+        if let Some(main_log) = self.find_latest_snakemake_log() {
+            return main_log;
+        }
+
         // Fallback: return a path that shows what we're looking for
         if !job.log_files.is_empty() {
             working_dir.join(&job.log_files[0]).to_string()
@@ -290,6 +295,36 @@ impl App {
                 .join(format!("{}.log", wildcards_suffix))
                 .to_string()
         }
+    }
+
+    /// Find the most recent main snakemake log file.
+    fn find_latest_snakemake_log(&self) -> Option<String> {
+        let log_dir = self.state.working_dir.join(".snakemake").join("log");
+        if !log_dir.exists() {
+            return None;
+        }
+
+        let mut latest: Option<(std::time::SystemTime, String)> = None;
+
+        if let Ok(entries) = std::fs::read_dir(&log_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.ends_with(".snakemake.log") {
+                        if let Ok(metadata) = entry.metadata() {
+                            if let Ok(modified) = metadata.modified() {
+                                let path_str = path.to_string_lossy().to_string();
+                                if latest.is_none() || modified > latest.as_ref().unwrap().0 {
+                                    latest = Some((modified, path_str));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        latest.map(|(_, path)| path)
     }
 
     /// Open log viewer for the currently selected job.
