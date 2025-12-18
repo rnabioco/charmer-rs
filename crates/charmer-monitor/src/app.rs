@@ -1,6 +1,8 @@
 //! Main TUI application.
 
-use crate::components::{Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary};
+use crate::components::{
+    Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
+};
 use crate::ui::Theme;
 use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -104,7 +106,7 @@ pub struct App {
     pub log_viewer_state: Option<LogViewerState>,
     pub theme: Theme,
     pub last_tick: Instant,
-    job_ids: Vec<String>,   // Cached sorted/filtered job IDs
+    job_ids: Vec<String>,    // Cached sorted/filtered job IDs
     rule_names: Vec<String>, // Cached rule names for rule view
 }
 
@@ -708,11 +710,7 @@ impl App {
                 Span::styled("  Failed: ", Style::default().fg(Color::Gray)),
                 Span::styled(
                     failed.to_string(),
-                    Style::default().fg(if failed > 0 {
-                        Color::Red
-                    } else {
-                        Color::Gray
-                    }),
+                    Style::default().fg(if failed > 0 { Color::Red } else { Color::Gray }),
                 ),
             ]));
 
@@ -739,7 +737,10 @@ impl App {
 
                 lines.push(Line::from(vec![
                     Span::styled("  Total runtime: ", Style::default().fg(Color::Gray)),
-                    Span::styled(format_secs(total_runtime), Style::default().fg(Color::Green)),
+                    Span::styled(
+                        format_secs(total_runtime),
+                        Style::default().fg(Color::Green),
+                    ),
                 ]));
             }
 
@@ -762,8 +763,11 @@ impl App {
             ]));
         }
 
-        let paragraph = Paragraph::new(lines)
-            .block(Block::default().borders(Borders::ALL).title(" Rule Details "));
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Rule Details "),
+        );
         frame.render_widget(paragraph, area);
     }
 

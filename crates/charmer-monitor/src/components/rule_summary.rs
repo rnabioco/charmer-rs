@@ -162,9 +162,7 @@ impl RuleSummary {
             ),
             Span::styled(
                 "Fail",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 "Avg Time",
@@ -193,13 +191,13 @@ impl RuleSummary {
         let table = Table::new(
             rows,
             [
-                Constraint::Min(15),       // Rule
-                Constraint::Length(6),     // Total
-                Constraint::Length(5),     // Running
-                Constraint::Length(5),     // Done
-                Constraint::Length(5),     // Failed
-                Constraint::Length(10),    // Avg Time
-                Constraint::Length(10),    // Progress
+                Constraint::Min(15),    // Rule
+                Constraint::Length(6),  // Total
+                Constraint::Length(5),  // Running
+                Constraint::Length(5),  // Done
+                Constraint::Length(5),  // Failed
+                Constraint::Length(10), // Avg Time
+                Constraint::Length(10), // Progress
             ],
         )
         .header(header)

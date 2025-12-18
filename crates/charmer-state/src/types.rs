@@ -590,11 +590,7 @@ impl PipelineState {
         }
         self.pipeline_finished = info.finished;
         if !info.errors.is_empty() {
-            self.pipeline_errors = info
-                .errors
-                .iter()
-                .map(|s| parse_error_string(s))
-                .collect();
+            self.pipeline_errors = info.errors.iter().map(|s| parse_error_string(s)).collect();
         }
 
         // Create synthetic jobs for target rules (rules with no outputs, like "all")
@@ -785,8 +781,7 @@ fn parse_error_string(error: &str) -> PipelineError {
     }
 
     // Lock exception
-    if error_lower.contains("lockexception") || error_lower.contains("directory cannot be locked")
-    {
+    if error_lower.contains("lockexception") || error_lower.contains("directory cannot be locked") {
         return PipelineError::new(PipelineErrorType::Locked, error.to_string());
     }
 
