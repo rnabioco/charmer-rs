@@ -1,7 +1,7 @@
 # VHS Quickstart Tape for charmer
 # Run with: vhs quickstart.tape
 
-Output docs/assets/quickstart.gif
+Output ../images/quickstart.gif
 
 Set Shell "bash"
 Set FontSize 16
@@ -14,7 +14,7 @@ Type "# Quick Start with charmer"
 Enter
 Sleep 1s
 
-Type "cd my-pipeline"
+Type "cd ../../tests/pipelines/simple"
 Enter
 Sleep 500ms
 

@@ -2,7 +2,7 @@
 
 A terminal user interface (TUI) for monitoring Snakemake pipelines running on HPC clusters.
 
-![Charmer Demo](docs/assets/demo.gif)
+![Charmer Demo](docs/images/demo.gif)
 
 ## Features
 

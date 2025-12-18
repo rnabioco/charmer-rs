@@ -24,7 +24,7 @@ A terminal user interface (TUI) for monitoring Snakemake pipelines running on HP
 
 ## Demo
 
-![Charmer Demo](assets/demo.gif)
+![Charmer Demo](images/demo.gif)
 
 ## Quick Start
 

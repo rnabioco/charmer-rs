@@ -49,7 +49,7 @@ docs-serve = "mkdocs serve"
 rustdoc = "cargo doc --no-deps --open"
 
 # Generate VHS demo
-demo = "vhs vhs/demo.tape"
+demo = "cd docs/tapes && ./generate.sh"
 
 [dependencies]
 # Snakemake and execution plugins

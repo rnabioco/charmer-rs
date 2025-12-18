@@ -1,8 +1,8 @@
 # VHS Demo Tape for charmer
 # Run with: vhs demo.tape
 
-Output docs/assets/demo.gif
-Output docs/assets/demo.webm
+Output ../images/demo.gif
+Output ../images/demo.webm
 
 Set Shell "bash"
 Set FontSize 14
@@ -28,7 +28,7 @@ Enter
 Show
 
 # Start charmer with test data
-Type "charmer tests/pipelines/simple"
+Type "charmer ../../tests/pipelines/simple"
 Enter
 Sleep 2s
 
