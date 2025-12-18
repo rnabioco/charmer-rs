@@ -45,6 +45,9 @@ docs = "mkdocs build"
 # Serve documentation locally
 docs-serve = "mkdocs serve"
 
+# Deploy documentation to GitHub Pages
+docs-deploy = "mkdocs gh-deploy --force"
+
 # Generate Rust API docs
 rustdoc = "cargo doc --no-deps --open"
 
