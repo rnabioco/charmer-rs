@@ -1,8 +1,11 @@
 # Simple test pipeline for charmer development
-# Simulates a basic bioinformatics workflow (~2 minutes with 2 cores)
+# Simulates a basic bioinformatics workflow (~4-5 minutes with 2 cores)
 
-SAMPLES = ["sample1", "sample2", "sample3", "sample4"]
-CHROMOSOMES = ["chr1", "chr2", "chr3"]
+SAMPLES = ["sample1", "sample2", "sample3", "sample4", "sample5", "sample6"]
+CHROMOSOMES = ["chr1", "chr2", "chr3", "chr4"]
+
+# sample3 will fail during alignment to test failure display
+FAILING_SAMPLE = "sample3"
 
 rule all:
     input:
@@ -13,26 +16,49 @@ rule process_sample:
     output:
         "results/processed/{sample}.txt"
     params:
-        delay = 5
+        delay = 10  # Doubled from 5
+    log:
+        "logs/process_sample/{sample}.log"
     shell:
         """
-        echo "Processing {wildcards.sample}..."
+        exec > {log} 2>&1
+        echo "Starting processing for {wildcards.sample}..."
+        echo "INFO: Initializing sample processing pipeline"
         sleep {params.delay}
+        echo "INFO: Sample {wildcards.sample} processed successfully"
         echo "Processed: {wildcards.sample}" > {output}
         """
 
 rule align_sample:
-    """Alignment step - depends on processing."""
+    """Alignment step - depends on processing. sample3 will fail."""
     input:
         "results/processed/{sample}.txt"
     output:
         "results/aligned/{sample}.bam"
     params:
-        delay = 8
+        delay = 16,  # Doubled from 8
+        failing_sample = FAILING_SAMPLE
+    log:
+        "logs/align_sample/{sample}.log"
     shell:
         """
-        echo "Aligning {wildcards.sample}..."
+        exec > {log} 2>&1
+        echo "Starting alignment for {wildcards.sample}..."
+        echo "INFO: Loading reference genome"
+        sleep 5
+        echo "INFO: Running aligner on {wildcards.sample}"
+
+        # Simulate failure for sample3
+        if [ "{wildcards.sample}" = "{params.failing_sample}" ]; then
+            echo "ERROR: Out of memory while aligning {wildcards.sample}"
+            echo "ERROR: Process killed by OOM killer"
+            echo "ERROR: Peak memory usage: 32.5 GB (limit: 16 GB)"
+            sleep 2
+            exit 137  # Simulates OOM kill
+        fi
+
         sleep {params.delay}
+        echo "INFO: Alignment complete for {wildcards.sample}"
         echo "Aligned: {wildcards.sample}" > {output}
         """
 
@@ -43,11 +69,18 @@ rule call_variants:
     output:
         vcf = "results/variants/{sample}_{chrom}.vcf"
     params:
-        delay = 6
+        delay = 12  # Doubled from 6
+    log:
+        "logs/call_variants/{sample}_{chrom}.log"
     shell:
         """
-        echo "Calling variants for {wildcards.sample} on {wildcards.chrom}..."
+        exec > {log} 2>&1
+        echo "Starting variant calling for {wildcards.sample} on {wildcards.chrom}..."
+        echo "INFO: Loading BAM file"
+        sleep 3
+        echo "INFO: Scanning {wildcards.chrom} for variants"
         sleep {params.delay}
+        echo "INFO: Found variants on {wildcards.chrom}"
         echo "Variants: {wildcards.sample} {wildcards.chrom}" > {output.vcf}
         """
 
@@ -58,45 +91,61 @@ rule merge_sample_variants:
     output:
         "results/merged/{sample}_merged.vcf"
     params:
-        delay = 4
+        delay = 8  # Doubled from 4
+    log:
+        "logs/merge_sample/{sample}.log"
     shell:
         """
-        echo "Merging variants for {wildcards.sample}..."
+        exec > {log} 2>&1
+        echo "Starting variant merge for {wildcards.sample}..."
+        echo "INFO: Merging {CHROMOSOMES} VCF files"
         sleep {params.delay}
         cat {input} > {output}
+        echo "INFO: Merge complete for {wildcards.sample}"
         """
 
 rule final_merge:
     """Final merge of all sample variants."""
     input:
-        expand("results/merged/{sample}_merged.vcf", sample=SAMPLES)
+        expand("results/merged/{sample}_merged.vcf", sample=[s for s in SAMPLES if s != FAILING_SAMPLE])
     output:
         "results/all_variants.vcf"
     params:
-        delay = 5
+        delay = 10  # Doubled from 5
+    log:
+        "logs/final_merge.log"
     shell:
         """
-        echo "Final merge of all variants..."
+        exec > {log} 2>&1
+        echo "Starting final merge of all variants..."
+        echo "INFO: Combining all sample VCFs"
         sleep {params.delay}
         cat {input} > {output}
+        echo "INFO: Final merge complete"
         """
 
 rule generate_report:
     """Generate final pipeline report."""
     input:
         vcf = "results/all_variants.vcf",
-        bams = expand("results/aligned/{sample}.bam", sample=SAMPLES)
+        bams = expand("results/aligned/{sample}.bam", sample=[s for s in SAMPLES if s != FAILING_SAMPLE])
     output:
         "results/final_report.txt"
     params:
-        delay = 3
+        delay = 6  # Doubled from 3
+    log:
+        "logs/generate_report.log"
     shell:
         """
+        exec > {log} 2>&1
         echo "Generating final report..."
+        echo "INFO: Collecting pipeline statistics"
         sleep {params.delay}
         echo "=== Pipeline Complete ===" > {output}
-        echo "Samples: {SAMPLES}" >> {output}
+        echo "Samples processed: {SAMPLES}" >> {output}
+        echo "Note: {FAILING_SAMPLE} failed during alignment" >> {output}
         echo "Chromosomes: {CHROMOSOMES}" >> {output}
         echo "Total jobs: $(find results -type f | wc -l)" >> {output}
         date >> {output}
+        echo "INFO: Report generated successfully"
         """
