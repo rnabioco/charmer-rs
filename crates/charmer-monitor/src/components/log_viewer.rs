@@ -188,4 +188,65 @@ impl LogViewer {
         let paragraph = Paragraph::new(help).style(Style::default().fg(Color::DarkGray));
         frame.render_widget(paragraph, area);
     }
+
+    /// Render the log viewer as a bottom panel showing tailed output.
+    pub fn render_panel(frame: &mut Frame, area: Rect, state: &LogViewerState) {
+        // Calculate content area (excluding borders)
+        let content_height = area.height.saturating_sub(2) as usize; // Top border + title
+
+        // Build the title with log path and follow indicator
+        let follow_indicator = if state.follow_mode { " [follow]" } else { "" };
+        let title = format!(" Logs: {}{} ", state.log_path, follow_indicator);
+
+        // Get the last N lines to show (tail view)
+        let tail_lines = if state.lines.is_empty() {
+            &[][..]
+        } else {
+            let start = state.lines.len().saturating_sub(content_height);
+            &state.lines[start..]
+        };
+
+        // Build content
+        let content: Vec<Line> = if let Some(ref error) = state.error {
+            // Show error message
+            vec![Line::from(vec![Span::styled(
+                error.clone(),
+                Style::default().fg(Color::Red),
+            )])]
+        } else if tail_lines.is_empty() {
+            // Show empty message
+            vec![Line::from(vec![Span::styled(
+                "(waiting for log output...)",
+                Style::default().fg(Color::DarkGray),
+            )])]
+        } else {
+            // Show tailed log lines with syntax highlighting for common patterns
+            tail_lines
+                .iter()
+                .map(|line| {
+                    let style = if line.contains("ERROR") || line.contains("Error") {
+                        Style::default().fg(Color::Red)
+                    } else if line.contains("WARN") || line.contains("Warning") {
+                        Style::default().fg(Color::Yellow)
+                    } else if line.contains("INFO") || line.contains("rule ") {
+                        Style::default().fg(Color::Cyan)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    Line::from(vec![Span::styled(line.as_str(), style)])
+                })
+                .collect()
+        };
+
+        // Create the block with border
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray))
+            .title(title)
+            .title_style(Style::default().fg(Color::Cyan));
+
+        let paragraph = Paragraph::new(content).block(block);
+
+        frame.render_widget(paragraph, area);
+    }
 }

@@ -234,8 +234,25 @@ impl App {
                 format!(".snakemake/log/{}.log", job.rule)
             };
 
-            self.log_viewer_state = Some(LogViewerState::new(log_path, 1000));
+            let mut state = LogViewerState::new(log_path, 1000);
+            state.follow_mode = true; // Enable follow mode by default for panel view
+            self.log_viewer_state = Some(state);
             self.show_log_viewer = true;
+        }
+    }
+
+    /// Update log viewer to show the currently selected job's logs.
+    fn update_log_viewer_for_selected(&mut self) {
+        if let Some(job) = self.selected_job() {
+            let log_path = if !job.log_files.is_empty() {
+                job.log_files[0].clone()
+            } else {
+                format!(".snakemake/log/{}.log", job.rule)
+            };
+
+            let mut state = LogViewerState::new(log_path, 1000);
+            state.follow_mode = true;
+            self.log_viewer_state = Some(state);
         }
     }
 
@@ -275,30 +292,8 @@ impl App {
         }
     }
 
-    /// Handle a key event for the log viewer.
-    fn handle_log_viewer_key(&mut self, key: KeyEvent) {
-        if let Some(ref mut state) = self.log_viewer_state {
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => self.close_log_viewer(),
-                KeyCode::Char('j') | KeyCode::Down => state.scroll_down(),
-                KeyCode::Char('k') | KeyCode::Up => state.scroll_up(),
-                KeyCode::Char('g') | KeyCode::Home => state.scroll_to_top(),
-                KeyCode::Char('G') | KeyCode::End => state.scroll_to_bottom(),
-                KeyCode::Char('F') => state.toggle_follow(),
-                KeyCode::Char('r') => self.refresh_log_viewer(),
-                _ => {}
-            }
-        }
-    }
-
     /// Handle a key event.
     pub fn handle_key(&mut self, key: KeyEvent) {
-        // If log viewer is open, handle its keys
-        if self.show_log_viewer {
-            self.handle_log_viewer_key(key);
-            return;
-        }
-
         // If help is showing, any key closes it
         if self.show_help {
             self.show_help = false;
@@ -308,13 +303,31 @@ impl App {
         match key.code {
             KeyCode::Char('q') => self.quit(),
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
-            KeyCode::Char('j') | KeyCode::Down => self.select_next(),
-            KeyCode::Char('k') | KeyCode::Up => self.select_previous(),
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.select_next();
+                // Update log viewer to show new job's logs
+                if self.show_log_viewer {
+                    self.update_log_viewer_for_selected();
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.select_previous();
+                // Update log viewer to show new job's logs
+                if self.show_log_viewer {
+                    self.update_log_viewer_for_selected();
+                }
+            }
             KeyCode::Char('g') | KeyCode::Home => self.select_first(),
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Char('f') => self.cycle_filter(),
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
+            KeyCode::Char('F') if self.show_log_viewer => {
+                // Toggle follow mode when log panel is open
+                if let Some(ref mut state) = self.log_viewer_state {
+                    state.toggle_follow();
+                }
+            }
             KeyCode::Char('?') => self.toggle_help(),
             _ => {}
         }
@@ -333,15 +346,30 @@ impl App {
 
     /// Render the UI.
     pub fn render(&self, frame: &mut Frame) {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Header with progress
-                Constraint::Length(1), // Status counts
-                Constraint::Min(10),   // Main content
-                Constraint::Length(1), // Footer
-            ])
-            .split(frame.area());
+        // Adjust layout based on whether log panel is open
+        let chunks = if self.show_log_viewer {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Header with progress
+                    Constraint::Length(1),  // Status counts
+                    Constraint::Min(8),     // Main content (smaller when logs open)
+                    Constraint::Length(12), // Log panel
+                    Constraint::Length(1),  // Footer
+                ])
+                .split(frame.area())
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3), // Header with progress
+                    Constraint::Length(1), // Status counts
+                    Constraint::Min(10),   // Main content
+                    Constraint::Length(0), // No log panel
+                    Constraint::Length(1), // Footer
+                ])
+                .split(frame.area())
+        };
 
         // Header
         Header::render(frame, chunks[0], &self.state);
@@ -365,13 +393,13 @@ impl App {
         );
         JobDetail::render(frame, main_chunks[1], self.selected_job());
 
-        // Footer
-        Footer::render(frame, chunks[3]);
-
-        // Log viewer overlay
+        // Log panel at bottom (if open)
         if self.show_log_viewer {
-            self.render_log_viewer(frame);
+            self.render_log_panel(frame, chunks[3]);
         }
+
+        // Footer
+        Footer::render(frame, chunks[4]);
 
         // Help overlay (on top of everything)
         if self.show_help {
@@ -416,16 +444,10 @@ impl App {
         frame.render_widget(paragraph, area);
     }
 
-    fn render_log_viewer(&self, frame: &mut Frame) {
+    fn render_log_panel(&self, frame: &mut Frame, area: Rect) {
         if let Some(ref state) = self.log_viewer_state {
-            // Log viewer takes most of the screen
-            let area = centered_rect(90, 85, frame.area());
-
-            // Clear background
-            frame.render_widget(Clear, area);
-
-            // Render log viewer
-            LogViewer::render(frame, area, state);
+            // Render log viewer as a bottom panel (tailed output)
+            LogViewer::render_panel(frame, area, state);
         }
     }
 
@@ -439,22 +461,16 @@ impl App {
   Keyboard Shortcuts
   ──────────────────
 
-  j / ↓      Move down
-  k / ↑      Move up
+  j / ↓      Move down (also updates log panel)
+  k / ↑      Move up (also updates log panel)
   g / Home   Go to first job
   G / End    Go to last job
   f          Cycle filter (All/Running/Failed/Pending/Completed)
   s          Cycle sort (Status/Rule/Time)
-  l / Enter  View logs
+  l / Enter  Toggle log panel
+  F          Toggle follow mode (when logs open)
   ?          Toggle this help
   q / Ctrl+C Quit
-
-  Log Viewer:
-  j/k        Scroll up/down
-  g/G        Top/bottom
-  F          Toggle follow mode
-  r          Refresh
-  q/Esc      Close
 
   Press any key to close
 "#;
