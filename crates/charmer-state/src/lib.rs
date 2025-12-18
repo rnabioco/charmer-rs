@@ -2,7 +2,10 @@
 //!
 //! Merges data from SLURM and snakemake sources.
 
-pub mod types;
 pub mod merge;
+pub mod types;
 
-pub use types::{Job, JobStatus, JobTiming, JobResources, PipelineState};
+pub use merge::{correlate_jobs, merge_slurm_jobs, merge_snakemake_jobs, parse_slurm_comment};
+pub use types::{
+    DataSources, Job, JobCounts, JobError, JobResources, JobStatus, JobTiming, PipelineState,
+};
