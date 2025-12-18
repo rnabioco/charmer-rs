@@ -11,6 +11,50 @@ fn timestamp_to_datetime(ts: f64) -> DateTime<Utc> {
         .unwrap_or_else(Utc::now)
 }
 
+/// Extract wildcards from output path.
+/// For paths like "results/aligned/sample1.bam" with rule "align_sample",
+/// tries to extract sample=sample1 based on common patterns.
+fn extract_wildcards(output_path: &str, _rule: &str) -> Option<String> {
+    let parts: Vec<&str> = output_path.split('/').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let mut wildcards = Vec::new();
+
+    // Get the filename without extension
+    if let Some(filename) = parts.last() {
+        let name_parts: Vec<&str> = filename.split('.').collect();
+        if let Some(base_name) = name_parts.first() {
+            // Check for patterns like "sample1_chr1" -> sample=sample1, chrom=chr1
+            if base_name.contains('_') {
+                let segments: Vec<&str> = base_name.split('_').collect();
+                if segments.len() == 2 {
+                    // Heuristic: first part is sample, second is something else (chrom, etc.)
+                    if segments[1].starts_with("chr") {
+                        wildcards.push(format!("sample={}", segments[0]));
+                        wildcards.push(format!("chrom={}", segments[1]));
+                    } else {
+                        wildcards.push(format!("sample={}", segments[0]));
+                        wildcards.push(format!("var={}", segments[1]));
+                    }
+                } else if segments.len() == 1 {
+                    wildcards.push(format!("sample={}", segments[0]));
+                }
+            } else {
+                // Simple case: just a sample name
+                wildcards.push(format!("sample={}", base_name));
+            }
+        }
+    }
+
+    if wildcards.is_empty() {
+        None
+    } else {
+        Some(wildcards.join(", "))
+    }
+}
+
 /// Merge snakemake metadata into pipeline state.
 pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) {
     for snakemake_job in jobs {
@@ -35,12 +79,18 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
             completed_at: meta.endtime.map(timestamp_to_datetime),
         };
 
+        // Extract wildcards from output path
+        let wildcards = extract_wildcards(&snakemake_job.output_path, &meta.rule);
+
         // Check if job already exists (from SLURM data)
         if let Some(existing) = state.jobs.get_mut(&job_id) {
             // Update with snakemake-specific data
             existing.shellcmd = meta.shellcmd.clone();
             existing.inputs = meta.input.clone();
             existing.log_files = meta.log.clone();
+            if existing.wildcards.is_none() {
+                existing.wildcards = wildcards;
+            }
             if existing.timing.started_at.is_none() {
                 existing.timing.started_at = timing.started_at;
             }
@@ -53,7 +103,7 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
             let job = Job {
                 id: job_id.clone(),
                 rule: meta.rule.clone(),
-                wildcards: None, // Will be parsed from output path pattern
+                wildcards,
                 outputs: vec![snakemake_job.output_path.clone()],
                 inputs: meta.input.clone(),
                 status,
