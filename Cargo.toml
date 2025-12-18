@@ -11,8 +11,8 @@ authors = ["Jay Hesselberth"]
 
 [workspace.dependencies]
 # TUI
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30.0-beta.0"
+crossterm = "0.29"
 
 # Async
 tokio = { version = "1.43", features = ["full"] }
