@@ -70,8 +70,11 @@ pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: 
                 shellcmd: String::new(),
                 timing,
                 resources,
+                usage: None,
                 log_files: vec![],
                 error,
+                conda_env: None,
+                container_img_url: None,
                 data_sources: DataSources {
                     has_snakemake_metadata: false,
                     has_slurm_squeue: false,

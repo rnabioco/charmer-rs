@@ -1,6 +1,6 @@
 //! Job detail panel with rich formatting.
 
-use charmer_state::{FailureMode, Job, JobStatus, PipelineState};
+use charmer_state::{EnvType, ExecutionEnvironment, FailureMode, Job, JobStatus, PipelineState};
 use chrono::Utc;
 use ratatui::{
     layout::Rect,
@@ -170,15 +170,46 @@ fn build_pipeline_lines(state: &PipelineState) -> Vec<Line<'static>> {
         )));
 
         for error in state.pipeline_errors.iter().take(3) {
-            let msg = if error.len() > 45 {
-                format!("{}...", &error[..42])
-            } else {
-                error.clone()
-            };
-            lines.push(Line::from(vec![
+            // Error type with icon
+            let label = format!("{} {}", error.icon(), error.label());
+            let mut spans = vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(msg, Style::default().fg(Color::Red)),
-            ]));
+                Span::styled(
+                    label,
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+            ];
+
+            // Add rule name if available
+            if let Some(ref rule) = error.rule {
+                spans.push(Span::styled(
+                    format!(" ({})", rule),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+
+            // Add exit code if available
+            if let Some(code) = error.exit_code {
+                spans.push(Span::styled(
+                    format!(" [exit {}]", code),
+                    Style::default().fg(Color::Gray),
+                ));
+            }
+
+            lines.push(Line::from(spans));
+
+            // Show first detail if available
+            if let Some(detail) = error.details.first() {
+                let msg = if detail.len() > 42 {
+                    format!("...{}", &detail[detail.len() - 39..])
+                } else {
+                    detail.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("    ", Style::default()),
+                    Span::styled(msg, Style::default().fg(Color::Gray)),
+                ]));
+            }
         }
 
         if state.pipeline_errors.len() > 3 {
@@ -251,6 +282,34 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         lines.push(Line::from(vec![
             Span::styled("Job ID: ", Style::default().fg(Color::Gray)),
             Span::styled(slurm_id.clone(), Style::default().fg(Color::Cyan)),
+        ]));
+    }
+
+    // Execution environment
+    let env = ExecutionEnvironment::detect(
+        &job.shellcmd,
+        job.conda_env.as_deref(),
+        job.container_img_url.as_deref(),
+    );
+    if env.env_type != EnvType::Direct {
+        let (env_label, env_color) = match env.env_type {
+            EnvType::Pixi => ("Pixi", Color::Magenta),
+            EnvType::Conda => ("Conda", Color::Green),
+            EnvType::Container => ("Container", Color::Blue),
+            EnvType::Direct => ("Direct", Color::Gray),
+        };
+        let env_name = env.env_name.or(env.image_url).unwrap_or_default();
+        lines.push(Line::from(vec![
+            Span::styled("Env: ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                env_label,
+                Style::default().fg(env_color).add_modifier(Modifier::BOLD),
+            ),
+            if !env_name.is_empty() {
+                Span::styled(format!(" ({})", env_name), Style::default().fg(Color::Gray))
+            } else {
+                Span::raw("")
+            },
         ]));
     }
 
@@ -605,7 +664,8 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     }
 
     // Shell command preview
-    if !job.shellcmd.is_empty() {
+    let trimmed_cmd = job.shellcmd.trim();
+    if !trimmed_cmd.is_empty() {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Command",
@@ -613,25 +673,35 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )));
-        // Show first line or truncated command
-        let cmd_preview: String = job
-            .shellcmd
+
+        // Show first few non-empty lines of the command
+        let cmd_lines: Vec<&str> = trimmed_cmd
             .lines()
-            .next()
-            .unwrap_or(&job.shellcmd)
-            .chars()
-            .take(45)
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .take(3)
             .collect();
-        let cmd_display =
-            if cmd_preview.len() < job.shellcmd.lines().next().map(|l| l.len()).unwrap_or(0) {
-                format!("{}...", cmd_preview)
+
+        for cmd_line in cmd_lines {
+            let display = if cmd_line.len() > 50 {
+                format!("{}…", &cmd_line[..49])
             } else {
-                cmd_preview
+                cmd_line.to_string()
             };
-        lines.push(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(cmd_display, Style::default().fg(Color::Gray)),
-        ]));
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(display, Style::default().fg(Color::Gray)),
+            ]));
+        }
+
+        // Indicate if there are more lines
+        let total_lines = trimmed_cmd.lines().filter(|l| !l.trim().is_empty()).count();
+        if total_lines > 3 {
+            lines.push(Line::from(Span::styled(
+                format!("  (+{} more lines)", total_lines - 3),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
     }
 
     lines

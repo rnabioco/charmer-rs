@@ -1,9 +1,10 @@
 //! Background polling service for SLURM and LSF schedulers.
 
 use charmer_lsf::{query_bhist, query_bjobs};
-use charmer_slurm::{query_sacct, query_squeue};
+use charmer_slurm::{query_resource_usage, query_sacct, query_squeue};
 use charmer_state::{
     merge_lsf_jobs, merge_slurm_jobs, FailureAnalysis, FailureMode, JobStatus, PipelineState,
+    ResourceUsage,
 };
 use chrono::Utc;
 use std::sync::Arc;
@@ -172,6 +173,9 @@ impl PollingService {
         // Enrich failed jobs with failure analysis
         self.enrich_failed_jobs_slurm(&mut state).await;
 
+        // Enrich completed jobs with resource usage
+        self.enrich_completed_jobs_slurm(&mut state).await;
+
         Ok(())
     }
 
@@ -240,6 +244,36 @@ impl PollingService {
                             analysis: Some(unified_analysis),
                         });
                     }
+                }
+            }
+        }
+    }
+
+    /// Enrich completed SLURM jobs with resource usage data.
+    async fn enrich_completed_jobs_slurm(&self, state: &mut PipelineState) {
+        // Collect job IDs that need resource usage data
+        let jobs_needing_usage: Vec<(String, String)> = state
+            .jobs
+            .iter()
+            .filter(|(_, job)| {
+                // Get usage for completed and failed jobs that don't have it yet
+                matches!(job.status, JobStatus::Completed | JobStatus::Failed)
+                    && job.slurm_job_id.is_some()
+                    && job.usage.is_none()
+            })
+            .map(|(id, job)| (id.clone(), job.slurm_job_id.clone().unwrap()))
+            .take(10) // Limit to avoid too many queries per poll
+            .collect();
+
+        // Query resource usage for each job
+        for (job_id, slurm_job_id) in jobs_needing_usage {
+            if let Ok(Some(usage)) = query_resource_usage(&slurm_job_id).await {
+                if let Some(job) = state.jobs.get_mut(&job_id) {
+                    job.usage = Some(ResourceUsage {
+                        max_rss_mb: usage.max_rss_mb,
+                        elapsed_seconds: usage.elapsed_seconds,
+                        cpu_time_seconds: usage.cpu_time_seconds,
+                    });
                 }
             }
         }

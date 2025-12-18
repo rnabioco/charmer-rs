@@ -88,6 +88,8 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
             existing.shellcmd = meta.shellcmd.clone();
             existing.inputs = meta.input.clone();
             existing.log_files = meta.log.clone();
+            existing.conda_env = meta.conda_env.clone();
+            existing.container_img_url = meta.container_img_url.clone();
             if existing.wildcards.is_none() {
                 existing.wildcards = wildcards;
             }
@@ -111,8 +113,11 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
                 shellcmd: meta.shellcmd.clone(),
                 timing,
                 resources: JobResources::default(),
+                usage: None,
                 log_files: meta.log.clone(),
                 error: None,
+                conda_env: meta.conda_env.clone(),
+                container_img_url: meta.container_img_url.clone(),
                 data_sources: DataSources {
                     has_snakemake_metadata: true,
                     has_slurm_squeue: false,

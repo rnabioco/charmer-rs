@@ -70,8 +70,11 @@ pub fn merge_slurm_jobs(state: &mut PipelineState, jobs: Vec<SlurmJob>, from_sac
                 shellcmd: String::new(),
                 timing,
                 resources,
+                usage: None,
                 log_files: vec![],
                 error,
+                conda_env: None,
+                container_img_url: None,
                 data_sources: DataSources {
                     has_snakemake_metadata: false,
                     has_slurm_squeue: !from_sacct,

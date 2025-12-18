@@ -13,3 +13,4 @@ serde_json.workspace = true
 chrono.workspace = true
 camino.workspace = true
 thiserror.workspace = true
+regex.workspace = true

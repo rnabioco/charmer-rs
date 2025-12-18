@@ -74,6 +74,86 @@ fn parse_sacct_line(line: &str) -> Result<SlurmJob, SacctError> {
     })
 }
 
+/// Resource usage data from sacct.
+#[derive(Debug, Clone)]
+pub struct SlurmResourceUsage {
+    pub job_id: String,
+    pub max_rss_mb: Option<u64>,
+    pub elapsed_seconds: Option<u64>,
+    pub cpu_time_seconds: Option<u64>,
+}
+
+/// Query resource usage for a specific job.
+pub async fn query_resource_usage(job_id: &str) -> Result<Option<SlurmResourceUsage>, SacctError> {
+    let mut cmd = Command::new("sacct");
+    cmd.args([
+        "-j",
+        job_id,
+        "-X",
+        "--parsable2",
+        "--noheader",
+        "--format",
+        "JobIDRaw,MaxRSS,Elapsed,TotalCPU",
+    ]);
+
+    let stdout = run_command(&mut cmd, "sacct")
+        .await
+        .map_err(|e| SacctError::ExecutionError(e.to_string()))?;
+
+    let line = match stdout.lines().next() {
+        Some(l) if !l.trim().is_empty() => l,
+        _ => return Ok(None),
+    };
+
+    let fields: Vec<&str> = line.split('|').collect();
+    if fields.len() < 4 {
+        return Ok(None);
+    }
+
+    Ok(Some(SlurmResourceUsage {
+        job_id: fields[0].to_string(),
+        max_rss_mb: parse_memory_mb(fields[1], MemoryFormat::SlurmSacct),
+        elapsed_seconds: parse_elapsed_time(fields[2]),
+        cpu_time_seconds: parse_elapsed_time(fields[3]),
+    }))
+}
+
+/// Parse elapsed time string (HH:MM:SS or D-HH:MM:SS) to seconds.
+fn parse_elapsed_time(s: &str) -> Option<u64> {
+    if s.is_empty() || s == "Unknown" {
+        return None;
+    }
+
+    // Handle D-HH:MM:SS format
+    let (days, time_part) = if s.contains('-') {
+        let parts: Vec<&str> = s.splitn(2, '-').collect();
+        let days: u64 = parts[0].parse().ok()?;
+        (days, parts.get(1).copied().unwrap_or("0:0:0"))
+    } else {
+        (0, s)
+    };
+
+    // Handle HH:MM:SS or MM:SS or SS.mmm
+    let time_part = time_part.split('.').next().unwrap_or(time_part); // Remove milliseconds
+    let time_parts: Vec<&str> = time_part.split(':').collect();
+    let (hours, mins, secs) = match time_parts.len() {
+        3 => (
+            time_parts[0].parse::<u64>().ok()?,
+            time_parts[1].parse::<u64>().ok()?,
+            time_parts[2].parse::<u64>().ok()?,
+        ),
+        2 => (
+            0,
+            time_parts[0].parse::<u64>().ok()?,
+            time_parts[1].parse::<u64>().ok()?,
+        ),
+        1 => (0, 0, time_parts[0].parse::<u64>().ok()?),
+        _ => return None,
+    };
+
+    Some(days * 86400 + hours * 3600 + mins * 60 + secs)
+}
+
 /// Query job history with sacct.
 pub async fn query_sacct(
     run_uuid: Option<&str>,

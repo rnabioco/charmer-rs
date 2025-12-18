@@ -4,7 +4,7 @@ mod polling;
 mod watcher;
 
 use charmer_cli::Args;
-use charmer_core::{parse_metadata_file, scan_metadata_dir};
+use charmer_core::{parse_main_log, parse_metadata_file, scan_metadata_dir};
 use charmer_monitor::App;
 use charmer_state::{merge_snakemake_jobs, PipelineState};
 use clap::Parser;
@@ -101,9 +101,11 @@ async fn run_app(
     let tick_rate = Duration::from_millis(100);
     let update_interval = Duration::from_millis(500);
     let rescan_interval = Duration::from_secs(2); // Periodic re-scan fallback
+    let log_parse_interval = Duration::from_secs(1); // Parse main log frequently for progress
 
     let mut last_update = std::time::Instant::now();
     let mut last_rescan = std::time::Instant::now();
+    let mut last_log_parse = std::time::Instant::now();
     let mut debounce_map: HashMap<String, std::time::Instant> = HashMap::new();
     let debounce_duration = Duration::from_millis(500);
 
@@ -114,6 +116,19 @@ async fn run_app(
             app.update_from_state(state_guard.clone());
             drop(state_guard);
             last_update = std::time::Instant::now();
+        }
+
+        // Periodically parse main snakemake log for pipeline-level info
+        if last_log_parse.elapsed() >= log_parse_interval {
+            let state_guard = shared_state.lock().await;
+            let working_dir = state_guard.working_dir.clone();
+            drop(state_guard);
+
+            if let Ok(log_info) = parse_main_log(&working_dir) {
+                let mut state_guard = shared_state.lock().await;
+                state_guard.update_from_log_info(&log_info);
+            }
+            last_log_parse = std::time::Instant::now();
         }
 
         // Draw UI

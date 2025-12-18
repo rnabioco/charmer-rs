@@ -1,6 +1,6 @@
 //! Main TUI application.
 
-use crate::components::{Footer, Header, JobDetail, JobList, LogViewer, LogViewerState};
+use crate::components::{Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary};
 use crate::ui::Theme;
 use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
@@ -63,6 +63,16 @@ pub enum SortMode {
     Time,
 }
 
+/// View mode for main panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    /// Show individual jobs
+    #[default]
+    Jobs,
+    /// Show rule summary
+    Rules,
+}
+
 impl SortMode {
     pub fn next(self) -> Self {
         match self {
@@ -88,29 +98,34 @@ pub struct App {
     pub selected_index: usize,
     pub filter_mode: FilterMode,
     pub sort_mode: SortMode,
+    pub view_mode: ViewMode,
     pub show_help: bool,
     pub show_log_viewer: bool,
     pub log_viewer_state: Option<LogViewerState>,
     pub theme: Theme,
     pub last_tick: Instant,
-    job_ids: Vec<String>, // Cached sorted/filtered job IDs
+    job_ids: Vec<String>,   // Cached sorted/filtered job IDs
+    rule_names: Vec<String>, // Cached rule names for rule view
 }
 
 impl App {
     pub fn new(state: PipelineState) -> Self {
         let job_ids = state.jobs.keys().cloned().collect();
+        let rule_names: Vec<String> = state.jobs_by_rule.keys().cloned().collect();
         let mut app = Self {
             state,
             should_quit: false,
             selected_index: 0,
             filter_mode: FilterMode::default(),
             sort_mode: SortMode::default(),
+            view_mode: ViewMode::default(),
             show_help: false,
             show_log_viewer: false,
             log_viewer_state: None,
             theme: Theme::dark(),
             last_tick: Instant::now(),
             job_ids,
+            rule_names,
         };
         // Open log viewer by default
         app.open_log_viewer();
@@ -205,18 +220,25 @@ impl App {
         self.should_quit = true;
     }
 
+    /// Get the list length based on current view mode.
+    fn list_len(&self) -> usize {
+        match self.view_mode {
+            ViewMode::Jobs => self.job_ids.len(),
+            ViewMode::Rules => self.rule_names.len(),
+        }
+    }
+
     pub fn select_next(&mut self) {
-        if !self.job_ids.is_empty() {
-            self.selected_index = (self.selected_index + 1) % self.job_ids.len();
+        let len = self.list_len();
+        if len > 0 {
+            self.selected_index = (self.selected_index + 1) % len;
         }
     }
 
     pub fn select_previous(&mut self) {
-        if !self.job_ids.is_empty() {
-            self.selected_index = self
-                .selected_index
-                .checked_sub(1)
-                .unwrap_or(self.job_ids.len() - 1);
+        let len = self.list_len();
+        if len > 0 {
+            self.selected_index = self.selected_index.checked_sub(1).unwrap_or(len - 1);
         }
     }
 
@@ -225,8 +247,9 @@ impl App {
     }
 
     pub fn select_last(&mut self) {
-        if !self.job_ids.is_empty() {
-            self.selected_index = self.job_ids.len() - 1;
+        let len = self.list_len();
+        if len > 0 {
+            self.selected_index = len - 1;
         }
     }
 
@@ -242,6 +265,36 @@ impl App {
 
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    /// Toggle between jobs and rules view.
+    pub fn toggle_view_mode(&mut self) {
+        self.view_mode = match self.view_mode {
+            ViewMode::Jobs => ViewMode::Rules,
+            ViewMode::Rules => ViewMode::Jobs,
+        };
+        // Reset selection when switching views
+        self.selected_index = 0;
+        // Update rule names list when switching to rules view
+        if self.view_mode == ViewMode::Rules {
+            self.update_rule_list();
+        }
+    }
+
+    /// Update the cached rule names list.
+    fn update_rule_list(&mut self) {
+        let mut rules: Vec<_> = self.state.jobs_by_rule.keys().cloned().collect();
+        rules.sort();
+        self.rule_names = rules;
+    }
+
+    /// Get the currently selected rule name (in rules view).
+    pub fn selected_rule(&self) -> Option<&str> {
+        if self.view_mode == ViewMode::Rules {
+            self.rule_names.get(self.selected_index).map(|s| s.as_str())
+        } else {
+            None
+        }
     }
 
     /// Toggle log viewer for the currently selected job.
@@ -458,6 +511,7 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Char('f') => self.cycle_filter(),
             KeyCode::Char('s') => self.cycle_sort(),
+            KeyCode::Char('r') => self.toggle_view_mode(),
             KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
             KeyCode::Char('F') if self.show_log_viewer => {
                 // Toggle follow mode when log panel is open
@@ -520,20 +574,40 @@ impl App {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[2]);
 
-        // Job list (left) and detail (right)
-        JobList::render(
-            frame,
-            main_chunks[0],
-            &self.state,
-            &self.job_ids,
-            Some(self.selected_index),
-        );
+        // Render based on view mode
+        match self.view_mode {
+            ViewMode::Jobs => {
+                // Job list (left) and detail (right)
+                JobList::render(
+                    frame,
+                    main_chunks[0],
+                    &self.state,
+                    &self.job_ids,
+                    Some(self.selected_index),
+                );
 
-        // Render job detail or pipeline summary
-        if self.is_main_pipeline_selected() {
-            JobDetail::render_pipeline(frame, main_chunks[1], &self.state);
-        } else {
-            JobDetail::render(frame, main_chunks[1], self.selected_job());
+                // Render job detail or pipeline summary
+                if self.is_main_pipeline_selected() {
+                    JobDetail::render_pipeline(frame, main_chunks[1], &self.state);
+                } else {
+                    JobDetail::render(frame, main_chunks[1], self.selected_job());
+                }
+            }
+            ViewMode::Rules => {
+                // Rule summary table (full width of left panel)
+                RuleSummary::render(
+                    frame,
+                    main_chunks[0],
+                    &self.state,
+                    &self.rule_names,
+                    Some(self.selected_index),
+                );
+
+                // Show stats for selected rule in right panel
+                if let Some(rule) = self.selected_rule() {
+                    self.render_rule_detail(frame, main_chunks[1], rule);
+                }
+            }
         }
 
         // Log panel at bottom (if open)
@@ -548,6 +622,149 @@ impl App {
         if self.show_help {
             self.render_help_overlay(frame);
         }
+    }
+
+    /// Render detail panel for selected rule.
+    fn render_rule_detail(&self, frame: &mut Frame, area: Rect, rule: &str) {
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::text::{Line, Span};
+        use ratatui::widgets::{Block, Borders, Paragraph};
+
+        let mut lines = Vec::new();
+
+        // Rule name
+        lines.push(Line::from(vec![
+            Span::styled("Rule: ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                rule.to_string(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+
+        lines.push(Line::from(""));
+
+        // Get jobs for this rule
+        if let Some(job_ids) = self.state.jobs_by_rule.get(rule) {
+            let mut running = 0;
+            let mut completed = 0;
+            let mut failed = 0;
+            let mut pending = 0;
+            let mut total_runtime: u64 = 0;
+            let mut completed_count = 0;
+
+            for id in job_ids {
+                if let Some(job) = self.state.jobs.get(id) {
+                    match job.status {
+                        JobStatus::Running => running += 1,
+                        JobStatus::Completed => {
+                            completed += 1;
+                            if let (Some(start), Some(end)) =
+                                (job.timing.started_at, job.timing.completed_at)
+                            {
+                                total_runtime += (end - start).num_seconds().max(0) as u64;
+                                completed_count += 1;
+                            }
+                        }
+                        JobStatus::Failed => failed += 1,
+                        JobStatus::Pending | JobStatus::Queued => pending += 1,
+                        _ => {}
+                    }
+                }
+            }
+
+            // Stats section
+            lines.push(Line::from(Span::styled(
+                "Statistics",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            )));
+
+            lines.push(Line::from(vec![
+                Span::styled("  Total: ", Style::default().fg(Color::Gray)),
+                Span::styled(job_ids.len().to_string(), Style::default().fg(Color::White)),
+            ]));
+
+            lines.push(Line::from(vec![
+                Span::styled("  Running: ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    running.to_string(),
+                    Style::default().fg(if running > 0 {
+                        Color::Yellow
+                    } else {
+                        Color::Gray
+                    }),
+                ),
+            ]));
+
+            lines.push(Line::from(vec![
+                Span::styled("  Completed: ", Style::default().fg(Color::Gray)),
+                Span::styled(completed.to_string(), Style::default().fg(Color::Green)),
+            ]));
+
+            lines.push(Line::from(vec![
+                Span::styled("  Failed: ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    failed.to_string(),
+                    Style::default().fg(if failed > 0 {
+                        Color::Red
+                    } else {
+                        Color::Gray
+                    }),
+                ),
+            ]));
+
+            lines.push(Line::from(vec![
+                Span::styled("  Pending: ", Style::default().fg(Color::Gray)),
+                Span::styled(pending.to_string(), Style::default().fg(Color::Blue)),
+            ]));
+
+            // Timing section
+            if completed_count > 0 {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Timing",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                )));
+
+                let avg_secs = total_runtime / completed_count as u64;
+                lines.push(Line::from(vec![
+                    Span::styled("  Avg runtime: ", Style::default().fg(Color::Gray)),
+                    Span::styled(format_secs(avg_secs), Style::default().fg(Color::Yellow)),
+                ]));
+
+                lines.push(Line::from(vec![
+                    Span::styled("  Total runtime: ", Style::default().fg(Color::Gray)),
+                    Span::styled(format_secs(total_runtime), Style::default().fg(Color::Green)),
+                ]));
+            }
+
+            // Progress
+            let progress = if !job_ids.is_empty() {
+                completed * 100 / job_ids.len()
+            } else {
+                0
+            };
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  Progress: ", Style::default().fg(Color::Gray)),
+                Span::styled(
+                    format!("{}%", progress),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default().borders(Borders::ALL).title(" Rule Details "));
+        frame.render_widget(paragraph, area);
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
@@ -606,8 +823,9 @@ impl App {
 
   j / ↓      Move down (also updates log panel)
   k / ↑      Move up (also updates log panel)
-  g / Home   Go to first job
-  G / End    Go to last job
+  g / Home   Go to first item
+  G / End    Go to last item
+  r          Toggle view (Jobs/Rules summary)
   f          Cycle filter (All/Running/Failed/Pending/Completed)
   s          Cycle sort (Status/Rule/Time)
   l / Enter  Toggle log panel
@@ -651,4 +869,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+/// Format seconds as human-readable duration.
+fn format_secs(secs: u64) -> String {
+    if secs >= 3600 {
+        let hours = secs / 3600;
+        let mins = (secs % 3600) / 60;
+        format!("{}h{}m", hours, mins)
+    } else if secs >= 60 {
+        let mins = secs / 60;
+        let secs = secs % 60;
+        format!("{}m{}s", mins, secs)
+    } else {
+        format!("{}s", secs)
+    }
 }

@@ -10,6 +10,7 @@ pub use merge::{
     parse_slurm_comment,
 };
 pub use types::{
-    DataSources, FailureAnalysis, FailureMode, Job, JobCounts, JobError, JobResources, JobStatus,
-    JobTiming, PipelineState,
+    DataSources, EnvType, ExecutionEnvironment, FailureAnalysis, FailureMode, Job, JobCounts,
+    JobError, JobResources, JobStatus, JobTiming, PipelineError, PipelineErrorType, PipelineState,
+    ResourceUsage, MAIN_PIPELINE_JOB_ID,
 };

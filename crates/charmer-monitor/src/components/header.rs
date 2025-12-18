@@ -61,8 +61,34 @@ impl Header {
             ])
         };
 
-        let datetime_line = Line::from(Span::styled(datetime, Style::default().fg(Color::Yellow)))
-            .alignment(Alignment::Right);
+        // Build datetime/ETA line
+        let datetime_spans = if let Some(eta) = state.eta_string() {
+            if !state.pipeline_finished && state.pipeline_errors.is_empty() {
+                vec![
+                    Span::styled("ETA: ", Style::default().fg(Color::Gray)),
+                    Span::styled(eta, Style::default().fg(Color::Magenta)),
+                    Span::styled("  ", Style::default()),
+                    Span::styled(datetime, Style::default().fg(Color::Yellow)),
+                ]
+            } else {
+                vec![Span::styled(datetime, Style::default().fg(Color::Yellow))]
+            }
+        } else {
+            vec![Span::styled(datetime, Style::default().fg(Color::Yellow))]
+        };
+
+        let datetime_line = Line::from(datetime_spans).alignment(Alignment::Right);
+
+        // Build label with ETA info
+        let label = if !state.pipeline_finished && state.pipeline_errors.is_empty() {
+            if let Some(eta) = state.eta_string() {
+                format!("{}/{} jobs  ETA: {}", counts.completed, total, eta)
+            } else {
+                format!("{}/{} jobs", counts.completed, total)
+            }
+        } else {
+            format!("{}/{} jobs", counts.completed, total)
+        };
 
         let gauge = Gauge::default()
             .block(
@@ -72,7 +98,7 @@ impl Header {
                     .title_top(datetime_line),
             )
             .percent(progress.min(100.0) as u16)
-            .label(format!("{}/{} jobs", counts.completed, total));
+            .label(label);
 
         frame.render_widget(gauge, area);
     }
