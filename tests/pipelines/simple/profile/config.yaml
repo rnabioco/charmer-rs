@@ -1,0 +1,22 @@
+# SLURM profile for testing charmer
+# Use: snakemake --profile profile/
+
+executor: slurm
+
+# Default resources for all rules
+default-resources:
+  slurm_partition: "short"
+  mem_mb: 1000
+  runtime: 10  # minutes
+
+# Job grouping
+group-components: 1
+
+# Retries
+retries: 1
+
+# Keep going on failures for testing
+keep-going: true
+
+# Local cores for local rules
+local-cores: 1

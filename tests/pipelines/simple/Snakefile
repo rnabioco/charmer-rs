@@ -1,0 +1,78 @@
+# Simple test pipeline for charmer development
+# Simulates a basic bioinformatics workflow
+
+SAMPLES = ["sample1", "sample2", "sample3"]
+CHROMOSOMES = ["chr1", "chr2"]
+
+rule all:
+    input:
+        "results/final_report.txt"
+
+rule process_sample:
+    output:
+        "results/processed/{sample}.txt"
+    params:
+        delay = 2
+    shell:
+        """
+        echo "Processing {wildcards.sample}..."
+        sleep {params.delay}
+        echo "Processed: {wildcards.sample}" > {output}
+        """
+
+rule align_sample:
+    input:
+        "results/processed/{sample}.txt"
+    output:
+        "results/aligned/{sample}.bam"
+    params:
+        delay = 3
+    shell:
+        """
+        echo "Aligning {wildcards.sample}..."
+        sleep {params.delay}
+        echo "Aligned: {wildcards.sample}" > {output}
+        """
+
+rule call_variants:
+    input:
+        bam = "results/aligned/{sample}.bam"
+    output:
+        vcf = "results/variants/{sample}_{chrom}.vcf"
+    params:
+        delay = 2
+    shell:
+        """
+        echo "Calling variants for {wildcards.sample} on {wildcards.chrom}..."
+        sleep {params.delay}
+        echo "Variants: {wildcards.sample} {wildcards.chrom}" > {output.vcf}
+        """
+
+rule merge_variants:
+    input:
+        expand("results/variants/{sample}_{chrom}.vcf", sample=SAMPLES, chrom=CHROMOSOMES)
+    output:
+        "results/merged_variants.vcf"
+    params:
+        delay = 2
+    shell:
+        """
+        echo "Merging all variants..."
+        sleep {params.delay}
+        cat {input} > {output}
+        """
+
+rule generate_report:
+    input:
+        vcf = "results/merged_variants.vcf",
+        bams = expand("results/aligned/{sample}.bam", sample=SAMPLES)
+    output:
+        "results/final_report.txt"
+    shell:
+        """
+        echo "Generating final report..."
+        echo "=== Pipeline Complete ===" > {output}
+        echo "Samples: {SAMPLES}" >> {output}
+        echo "Chromosomes: {CHROMOSOMES}" >> {output}
+        date >> {output}
+        """

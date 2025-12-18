@@ -1,0 +1,10 @@
+[package]
+name = "charmer-lsf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

@@ -1,0 +1,40 @@
+[project]
+name = "charmer"
+version = "0.1.0"
+description = "Snakemake pipeline monitor TUI for SLURM clusters"
+channels = ["conda-forge", "bioconda"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[tasks]
+# Run a test snakemake pipeline (local execution)
+test-pipeline = "cd tests/pipelines/simple && snakemake --cores 2 --snakefile Snakefile"
+
+# Clean test pipeline outputs
+clean-test = "cd tests/pipelines/simple && snakemake --cores 1 --delete-all-output"
+
+# Dry run to see what would be executed
+dry-run = "cd tests/pipelines/simple && snakemake --cores 2 --dry-run"
+
+# Generate DAG visualization
+dag = "cd tests/pipelines/simple && snakemake --dag | dot -Tpng > dag.png"
+
+# Build the Rust project
+build = "cargo build"
+
+# Run tests
+test = "cargo test"
+
+# Run charmer in development mode
+run = "cargo run -- ."
+
+[dependencies]
+# Snakemake and execution plugins
+snakemake = ">=8.0"
+snakemake-executor-plugin-slurm = "*"
+snakemake-executor-plugin-cluster-generic = "*"
+
+# For DAG visualization
+graphviz = "*"
+
+# Python for any helper scripts
+python = ">=3.11"

@@ -4,7 +4,7 @@ members = ["crates/*"]
 
 [workspace.package]
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 license = "MIT"
 authors = ["Jay Hesselberth"]
 
@@ -45,6 +45,7 @@ miette = { version = "7.0", features = ["fancy"] }
 # Internal crates
 charmer-core = { path = "crates/charmer-core" }
 charmer-slurm = { path = "crates/charmer-slurm" }
+charmer-lsf = { path = "crates/charmer-lsf" }
 charmer-state = { path = "crates/charmer-state" }
 charmer-monitor = { path = "crates/charmer-monitor" }
 charmer-cli = { path = "crates/charmer-cli" }

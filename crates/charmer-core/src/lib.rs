@@ -4,4 +4,7 @@
 
 pub mod metadata;
 
-pub use metadata::{SnakemakeJob, SnakemakeMetadata};
+pub use metadata::{
+    decode_metadata_filename, parse_metadata_file, scan_metadata_dir, MetadataError,
+    SnakemakeJob, SnakemakeMetadata,
+};

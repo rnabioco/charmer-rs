@@ -70,6 +70,8 @@ pub struct DataSources {
     pub has_snakemake_metadata: bool,
     pub has_slurm_squeue: bool,
     pub has_slurm_sacct: bool,
+    pub has_lsf_bjobs: bool,
+    pub has_lsf_bhist: bool,
 }
 
 /// Unified job combining SLURM and snakemake data.

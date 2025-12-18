@@ -3,3 +3,12 @@ Cargo.lock
 .DS_Store
 *.swp
 *.swo
+
+# Test pipeline outputs
+tests/pipelines/*/results/
+tests/pipelines/*/.snakemake/
+tests/pipelines/*/dag.png
+
+# Pixi
+.pixi/
+pixi.lock
