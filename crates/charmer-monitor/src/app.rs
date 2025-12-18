@@ -1,11 +1,12 @@
 //! Main TUI application.
 
-use crate::components::{Footer, Header, JobDetail, JobList};
+use crate::components::{Footer, Header, JobDetail, JobList, LogViewer, LogViewerState};
 use crate::ui::Theme;
 use charmer_state::{JobStatus, PipelineState};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    widgets::Clear,
     Frame,
 };
 use std::time::{Duration, Instant};
@@ -88,6 +89,8 @@ pub struct App {
     pub filter_mode: FilterMode,
     pub sort_mode: SortMode,
     pub show_help: bool,
+    pub show_log_viewer: bool,
+    pub log_viewer_state: Option<LogViewerState>,
     pub theme: Theme,
     pub last_tick: Instant,
     job_ids: Vec<String>, // Cached sorted/filtered job IDs
@@ -103,6 +106,8 @@ impl App {
             filter_mode: FilterMode::default(),
             sort_mode: SortMode::default(),
             show_help: false,
+            show_log_viewer: false,
+            log_viewer_state: None,
             theme: Theme::dark(),
             last_tick: Instant::now(),
             job_ids,
@@ -208,14 +213,89 @@ impl App {
         self.show_help = !self.show_help;
     }
 
+    /// Open log viewer for the currently selected job.
+    pub fn open_log_viewer(&mut self) {
+        if let Some(job) = self.selected_job() {
+            // Try to find a log file for this job
+            let log_path = if !job.log_files.is_empty() {
+                // Use the first log file from snakemake metadata
+                job.log_files[0].clone()
+            } else {
+                // Fallback: try .snakemake/log/{rule}.log
+                format!(".snakemake/log/{}.log", job.rule)
+            };
+
+            self.log_viewer_state = Some(LogViewerState::new(log_path, 1000));
+            self.show_log_viewer = true;
+        }
+    }
+
+    /// Close the log viewer.
+    pub fn close_log_viewer(&mut self) {
+        self.show_log_viewer = false;
+        self.log_viewer_state = None;
+    }
+
+    /// Refresh the log viewer content.
+    pub fn refresh_log_viewer(&mut self) {
+        if let Some(ref state) = self.log_viewer_state {
+            let log_path = state.log_path.clone();
+            let follow = state.follow_mode;
+            self.log_viewer_state = Some(LogViewerState::new(log_path, 1000));
+            if follow {
+                if let Some(ref mut new_state) = self.log_viewer_state {
+                    new_state.follow_mode = true;
+                    new_state.scroll_to_bottom();
+                }
+            }
+        }
+    }
+
     /// Update app state from external source (polling service).
     pub fn update_from_state(&mut self, new_state: PipelineState) {
         self.state = new_state;
         self.update_job_list();
+
+        // Refresh log viewer if in follow mode
+        if self.show_log_viewer {
+            if let Some(ref state) = self.log_viewer_state {
+                if state.follow_mode {
+                    self.refresh_log_viewer();
+                }
+            }
+        }
+    }
+
+    /// Handle a key event for the log viewer.
+    fn handle_log_viewer_key(&mut self, key: KeyEvent) {
+        if let Some(ref mut state) = self.log_viewer_state {
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => self.close_log_viewer(),
+                KeyCode::Char('j') | KeyCode::Down => state.scroll_down(),
+                KeyCode::Char('k') | KeyCode::Up => state.scroll_up(),
+                KeyCode::Char('g') | KeyCode::Home => state.scroll_to_top(),
+                KeyCode::Char('G') | KeyCode::End => state.scroll_to_bottom(),
+                KeyCode::Char('F') => state.toggle_follow(),
+                KeyCode::Char('r') => self.refresh_log_viewer(),
+                _ => {}
+            }
+        }
     }
 
     /// Handle a key event.
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // If log viewer is open, handle its keys
+        if self.show_log_viewer {
+            self.handle_log_viewer_key(key);
+            return;
+        }
+
+        // If help is showing, any key closes it
+        if self.show_help {
+            self.show_help = false;
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => self.quit(),
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
@@ -225,6 +305,7 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Char('f') => self.cycle_filter(),
             KeyCode::Char('s') => self.cycle_sort(),
+            KeyCode::Char('l') | KeyCode::Enter => self.open_log_viewer(),
             KeyCode::Char('?') => self.toggle_help(),
             _ => {}
         }
@@ -278,7 +359,12 @@ impl App {
         // Footer
         Footer::render(frame, chunks[3]);
 
-        // Help overlay
+        // Log viewer overlay
+        if self.show_log_viewer {
+            self.render_log_viewer(frame);
+        }
+
+        // Help overlay (on top of everything)
         if self.show_help {
             self.render_help_overlay(frame);
         }
@@ -321,9 +407,22 @@ impl App {
         frame.render_widget(paragraph, area);
     }
 
+    fn render_log_viewer(&self, frame: &mut Frame) {
+        if let Some(ref state) = self.log_viewer_state {
+            // Log viewer takes most of the screen
+            let area = centered_rect(90, 85, frame.area());
+
+            // Clear background
+            frame.render_widget(Clear, area);
+
+            // Render log viewer
+            LogViewer::render(frame, area, state);
+        }
+    }
+
     fn render_help_overlay(&self, frame: &mut Frame) {
         use ratatui::style::{Color, Style};
-        use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+        use ratatui::widgets::{Block, Borders, Paragraph};
 
         let area = centered_rect(60, 60, frame.area());
 
@@ -337,11 +436,18 @@ impl App {
   G / End    Go to last job
   f          Cycle filter (All/Running/Failed/Pending/Completed)
   s          Cycle sort (Status/Rule/Time)
-  l / Enter  View logs (not yet implemented)
+  l / Enter  View logs
   ?          Toggle this help
   q / Ctrl+C Quit
 
-  Press ? to close
+  Log Viewer:
+  j/k        Scroll up/down
+  g/G        Top/bottom
+  F          Toggle follow mode
+  r          Refresh
+  q/Esc      Close
+
+  Press any key to close
 "#;
 
         frame.render_widget(Clear, area);
