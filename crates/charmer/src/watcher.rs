@@ -31,8 +31,8 @@ impl MetadataWatcher {
 
         let (tx, rx) = channel();
 
-        // Create watcher
-        let watcher = create_watcher(tx, metadata_dir.clone())?;
+        // Create watcher - pass working_dir to watch for .snakemake creation
+        let watcher = create_watcher(tx, metadata_dir.clone(), working_dir.to_owned())?;
 
         Ok(Self {
             _watcher: watcher,
@@ -63,6 +63,7 @@ impl MetadataWatcher {
 fn create_watcher(
     tx: Sender<WatcherEvent>,
     metadata_dir: Utf8PathBuf,
+    working_dir: Utf8PathBuf,
 ) -> Result<RecommendedWatcher> {
     let tx_clone = tx.clone();
     let metadata_dir_clone = metadata_dir.clone();
@@ -80,23 +81,24 @@ fn create_watcher(
     )
     .into_diagnostic()?;
 
-    // Try to watch the metadata directory if it exists
+    // Watch the metadata directory if it exists
     if metadata_dir.exists() {
         watcher
             .watch(metadata_dir.as_std_path(), RecursiveMode::NonRecursive)
             .into_diagnostic()?;
-    } else {
-        // Watch the .snakemake directory to detect when metadata/ is created
-        let snakemake_dir = metadata_dir
-            .parent()
-            .unwrap_or_else(|| Utf8Path::new(".snakemake"));
-        if snakemake_dir.exists() {
-            watcher
-                .watch(snakemake_dir.as_std_path(), RecursiveMode::NonRecursive)
-                .into_diagnostic()?;
-        }
-        // If .snakemake doesn't exist either, watcher won't send events until created
     }
+
+    // Also watch .snakemake directory to detect when metadata/ is created
+    let snakemake_dir = metadata_dir
+        .parent()
+        .unwrap_or_else(|| Utf8Path::new(".snakemake"));
+    if snakemake_dir.exists() {
+        // Ignore error if already watching
+        let _ = watcher.watch(snakemake_dir.as_std_path(), RecursiveMode::NonRecursive);
+    }
+
+    // Always watch the working directory to detect .snakemake creation
+    let _ = watcher.watch(working_dir.as_std_path(), RecursiveMode::NonRecursive);
 
     Ok(watcher)
 }
@@ -113,6 +115,12 @@ fn handle_event(event: Event, tx: &Sender<WatcherEvent>, metadata_dir: &Utf8Path
 
                 // Check if this is the metadata directory being created
                 if path == metadata_dir {
+                    let _ = tx.send(WatcherEvent::MetadataDirectoryCreated);
+                    continue;
+                }
+
+                // Check if .snakemake or .snakemake/metadata was created
+                if path.file_name() == Some(".snakemake") || path.ends_with(".snakemake/metadata") {
                     let _ = tx.send(WatcherEvent::MetadataDirectoryCreated);
                     continue;
                 }

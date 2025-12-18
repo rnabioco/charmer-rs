@@ -270,6 +270,7 @@ impl App {
             frame,
             main_chunks[0],
             &self.state,
+            &self.job_ids,
             Some(self.selected_index),
         );
         JobDetail::render(frame, main_chunks[1], self.selected_job());

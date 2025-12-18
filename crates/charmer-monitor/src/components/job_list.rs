@@ -11,12 +11,20 @@ use ratatui::{
 pub struct JobList;
 
 impl JobList {
-    pub fn render(frame: &mut Frame, area: Rect, state: &PipelineState, selected: Option<usize>) {
-        let items: Vec<ListItem> = state
-            .jobs
-            .values()
+    /// Render the job list using filtered job IDs.
+    pub fn render(
+        frame: &mut Frame,
+        area: Rect,
+        state: &PipelineState,
+        filtered_job_ids: &[String],
+        selected: Option<usize>,
+    ) {
+        let items: Vec<ListItem> = filtered_job_ids
+            .iter()
             .enumerate()
-            .map(|(i, job)| {
+            .filter_map(|(i, job_id)| {
+                let job = state.jobs.get(job_id)?;
+
                 let mut style = match job.status {
                     JobStatus::Running => Style::default().fg(Color::Yellow),
                     JobStatus::Completed => Style::default().fg(Color::Green),
@@ -39,7 +47,7 @@ impl JobList {
                     format!("{}[{}]", job.rule, wildcards)
                 };
 
-                ListItem::new(format!("{} {}", job.status.symbol(), label)).style(style)
+                Some(ListItem::new(format!("{} {}", job.status.symbol(), label)).style(style))
             })
             .collect();
 
