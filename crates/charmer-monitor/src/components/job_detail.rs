@@ -1,11 +1,11 @@
 //! Job detail panel.
 
+use charmer_state::Job;
 use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use charmer_state::Job;
 
 pub struct JobDetail;
 
@@ -39,8 +39,8 @@ impl JobDetail {
             None => "No job selected".to_string(),
         };
 
-        let paragraph = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title("Details"));
+        let paragraph =
+            Paragraph::new(content).block(Block::default().borders(Borders::ALL).title("Details"));
 
         frame.render_widget(paragraph, area);
     }

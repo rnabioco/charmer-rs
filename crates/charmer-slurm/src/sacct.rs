@@ -42,7 +42,10 @@ fn parse_time_limit(s: &str) -> Option<Duration> {
         (0, parts[0])
     };
 
-    let time_parts: Vec<u64> = time_part.split(':').filter_map(|p| p.parse().ok()).collect();
+    let time_parts: Vec<u64> = time_part
+        .split(':')
+        .filter_map(|p| p.parse().ok())
+        .collect();
 
     let seconds = match time_parts.len() {
         3 => time_parts[0] * 3600 + time_parts[1] * 60 + time_parts[2],
@@ -76,7 +79,10 @@ fn parse_memory(s: &str) -> Option<u64> {
 
 /// Parse exit code (format: "exit_code:signal").
 fn parse_exit_code(s: &str) -> i32 {
-    s.split(':').next().and_then(|v| v.parse().ok()).unwrap_or(0)
+    s.split(':')
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
 }
 
 /// Parse sacct state string with exit code info.
@@ -206,7 +212,10 @@ mod tests {
             parse_state("FAILED", "1:0"),
             SlurmJobState::Failed { exit_code: 1, .. }
         ));
-        assert_eq!(parse_state("CANCELLED by 12345", "0:0"), SlurmJobState::Cancelled);
+        assert_eq!(
+            parse_state("CANCELLED by 12345", "0:0"),
+            SlurmJobState::Cancelled
+        );
     }
 
     #[test]

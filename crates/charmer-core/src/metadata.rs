@@ -113,8 +113,12 @@ pub fn scan_metadata_dir(working_dir: &Utf8Path) -> Result<Vec<SnakemakeJob>, Me
 
     for entry in std::fs::read_dir(&metadata_dir)? {
         let entry = entry?;
-        let path = Utf8PathBuf::try_from(entry.path())
-            .map_err(|e| MetadataError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())))?;
+        let path = Utf8PathBuf::try_from(entry.path()).map_err(|e| {
+            MetadataError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
+        })?;
 
         // Skip directories and non-files
         if !path.is_file() {
@@ -122,7 +126,11 @@ pub fn scan_metadata_dir(working_dir: &Utf8Path) -> Result<Vec<SnakemakeJob>, Me
         }
 
         // Skip hidden files
-        if path.file_name().map(|n| n.starts_with('.')).unwrap_or(false) {
+        if path
+            .file_name()
+            .map(|n| n.starts_with('.'))
+            .unwrap_or(false)
+        {
             continue;
         }
 

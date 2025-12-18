@@ -35,7 +35,9 @@ fn parse_lsf_time(s: &str) -> Option<DateTime<Utc>> {
     }
 
     // Try without year (assume current year)
-    if let Ok(dt) = NaiveDateTime::parse_from_str(&format!("{} {}", s, current_year), "%b %d %H:%M %Y") {
+    if let Ok(dt) =
+        NaiveDateTime::parse_from_str(&format!("{} {}", s, current_year), "%b %d %H:%M %Y")
+    {
         return Utc.from_local_datetime(&dt).single();
     }
 
@@ -48,7 +50,7 @@ fn parse_memory(s: &str) -> Option<u64> {
         return None;
     }
 
-    let parts: Vec<&str> = s.trim().split_whitespace().collect();
+    let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.is_empty() {
         return None;
     }

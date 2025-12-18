@@ -1,12 +1,12 @@
 //! Job list component.
 
+use charmer_state::{JobStatus, PipelineState};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, List, ListItem, ListState},
     Frame,
 };
-use charmer_state::{PipelineState, JobStatus};
 
 pub struct JobList;
 
@@ -44,11 +44,19 @@ impl JobList {
             .collect();
 
         let job_count = items.len();
-        let title = format!("Jobs ({}/{})", selected.map(|s| s + 1).unwrap_or(0), job_count);
+        let title = format!(
+            "Jobs ({}/{})",
+            selected.map(|s| s + 1).unwrap_or(0),
+            job_count
+        );
 
         let list = List::new(items)
             .block(Block::default().borders(Borders::ALL).title(title))
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            );
 
         // Use stateful rendering for scroll support
         let mut list_state = ListState::default();

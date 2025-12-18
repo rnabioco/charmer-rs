@@ -52,7 +52,10 @@ fn parse_time_limit(s: &str) -> Option<Duration> {
         (0, parts[0])
     };
 
-    let time_parts: Vec<u64> = time_part.split(':').filter_map(|p| p.parse().ok()).collect();
+    let time_parts: Vec<u64> = time_part
+        .split(':')
+        .filter_map(|p| p.parse().ok())
+        .collect();
 
     let seconds = match time_parts.len() {
         3 => time_parts[0] * 3600 + time_parts[1] * 60 + time_parts[2],
@@ -215,6 +218,9 @@ mod tests {
         assert_eq!(job.name, "test_job");
         assert_eq!(job.state, SlurmJobState::Running);
         assert_eq!(job.cpus, Some(4));
-        assert_eq!(job.comment, Some("rule_align_wildcards_sample=S1".to_string()));
+        assert_eq!(
+            job.comment,
+            Some("rule_align_wildcards_sample=S1".to_string())
+        );
     }
 }

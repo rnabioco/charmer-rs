@@ -1,11 +1,11 @@
 //! Header component with progress bar.
 
+use charmer_state::PipelineState;
 use ratatui::{
     layout::Rect,
     widgets::{Block, Borders, Gauge},
     Frame,
 };
-use charmer_state::PipelineState;
 
 pub struct Header;
 

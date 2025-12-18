@@ -121,16 +121,14 @@ impl App {
         // Sort jobs
         match self.sort_mode {
             SortMode::Status => {
-                jobs.sort_by_key(|(_, job)| {
-                    match job.status {
-                        JobStatus::Running => 0,
-                        JobStatus::Failed => 1,
-                        JobStatus::Queued => 2,
-                        JobStatus::Pending => 3,
-                        JobStatus::Completed => 4,
-                        JobStatus::Cancelled => 5,
-                        JobStatus::Unknown => 6,
-                    }
+                jobs.sort_by_key(|(_, job)| match job.status {
+                    JobStatus::Running => 0,
+                    JobStatus::Failed => 1,
+                    JobStatus::Queued => 2,
+                    JobStatus::Pending => 3,
+                    JobStatus::Completed => 4,
+                    JobStatus::Cancelled => 5,
+                    JobStatus::Unknown => 6,
                 });
             }
             SortMode::Rule => {
@@ -248,10 +246,10 @@ impl App {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Header with progress
-                Constraint::Length(1),  // Status counts
-                Constraint::Min(10),    // Main content
-                Constraint::Length(1),  // Footer
+                Constraint::Length(3), // Header with progress
+                Constraint::Length(1), // Status counts
+                Constraint::Min(10),   // Main content
+                Constraint::Length(1), // Footer
             ])
             .split(frame.area());
 
@@ -268,7 +266,12 @@ impl App {
             .split(chunks[2]);
 
         // Job list (left) and detail (right)
-        JobList::render(frame, main_chunks[0], &self.state, Some(self.selected_index));
+        JobList::render(
+            frame,
+            main_chunks[0],
+            &self.state,
+            Some(self.selected_index),
+        );
         JobDetail::render(frame, main_chunks[1], self.selected_job());
 
         // Footer

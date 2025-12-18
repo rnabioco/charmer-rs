@@ -15,6 +15,7 @@ pub enum BhistError {
 }
 
 /// Parse LSF timestamp format (Mon DD HH:MM or Mon DD HH:MM YYYY)
+#[allow(dead_code)]
 fn parse_lsf_time(s: &str) -> Option<DateTime<Utc>> {
     if s.is_empty() || s == "-" {
         return None;
@@ -43,7 +44,7 @@ fn parse_memory(s: &str) -> Option<u64> {
         return None;
     }
 
-    let parts: Vec<&str> = s.trim().split_whitespace().collect();
+    let parts: Vec<&str> = s.split_whitespace().collect();
     if parts.is_empty() {
         return None;
     }
@@ -60,6 +61,7 @@ fn parse_memory(s: &str) -> Option<u64> {
 }
 
 /// Parse LSF run time string (HH:MM:SS or seconds).
+#[allow(dead_code)]
 fn parse_runtime(s: &str) -> Option<Duration> {
     if s.is_empty() || s == "-" {
         return None;
@@ -152,9 +154,7 @@ fn parse_bhist_long_output(
         // Parse job details from current job
         if let Some(ref mut job) = current_job {
             if line.contains("Job Name <") {
-                if let (Some(start), Some(end)) =
-                    (line.find("Job Name <"), line.rfind(">"))
-                {
+                if let (Some(start), Some(end)) = (line.find("Job Name <"), line.rfind(">")) {
                     job.name = line[start + 10..end].to_string();
                 }
             }
@@ -169,7 +169,8 @@ fn parse_bhist_long_output(
             if line.contains("Started on") {
                 if let Some(host_start) = line.find("Started on <") {
                     if let Some(host_end) = line[host_start..].find(">,") {
-                        job.exec_host = Some(line[host_start + 12..host_start + host_end].to_string());
+                        job.exec_host =
+                            Some(line[host_start + 12..host_start + host_end].to_string());
                     }
                 }
             }

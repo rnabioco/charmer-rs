@@ -60,7 +60,10 @@ impl MetadataWatcher {
 }
 
 /// Create and configure the file watcher.
-fn create_watcher(tx: Sender<WatcherEvent>, metadata_dir: Utf8PathBuf) -> Result<RecommendedWatcher> {
+fn create_watcher(
+    tx: Sender<WatcherEvent>,
+    metadata_dir: Utf8PathBuf,
+) -> Result<RecommendedWatcher> {
     let tx_clone = tx.clone();
     let metadata_dir_clone = metadata_dir.clone();
 
