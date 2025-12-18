@@ -21,11 +21,32 @@ dag = "cd tests/pipelines/simple && snakemake --dag | dot -Tpng > dag.png"
 # Build the Rust project
 build = "cargo build"
 
+# Build release binary
+release = "cargo build --release"
+
 # Run tests
 test = "cargo test"
 
 # Run charmer in development mode
 run = "cargo run -- ."
+
+# Format code
+fmt = "cargo fmt"
+
+# Run clippy lints
+lint = "cargo clippy -- -D warnings"
+
+# Build documentation
+docs = "mkdocs build"
+
+# Serve documentation locally
+docs-serve = "mkdocs serve"
+
+# Generate Rust API docs
+rustdoc = "cargo doc --no-deps --open"
+
+# Generate VHS demo
+demo = "vhs vhs/demo.tape"
 
 [dependencies]
 # Snakemake and execution plugins
@@ -38,3 +59,10 @@ graphviz = "*"
 
 # Python for any helper scripts
 python = ">=3.11"
+
+# Documentation
+mkdocs = "*"
+mkdocs-material = "*"
+
+# VHS for terminal recording
+vhs = "*"

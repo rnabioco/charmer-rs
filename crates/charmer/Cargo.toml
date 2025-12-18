@@ -12,6 +12,7 @@ path = "src/main.rs"
 charmer-cli.workspace = true
 charmer-core.workspace = true
 charmer-slurm.workspace = true
+charmer-lsf.workspace = true
 charmer-state.workspace = true
 charmer-monitor.workspace = true
 clap = { workspace = true, features = ["derive"] }
@@ -19,3 +20,6 @@ tokio.workspace = true
 miette.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
+notify.workspace = true
+camino.workspace = true
+chrono.workspace = true

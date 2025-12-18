@@ -210,6 +210,12 @@ impl App {
         self.show_help = !self.show_help;
     }
 
+    /// Update app state from external source (polling service).
+    pub fn update_from_state(&mut self, new_state: PipelineState) {
+        self.state = new_state;
+        self.update_job_list();
+    }
+
     /// Handle a key event.
     pub fn handle_key(&mut self, key: KeyEvent) {
         match key.code {

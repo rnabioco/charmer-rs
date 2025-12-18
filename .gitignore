@@ -12,3 +12,22 @@ tests/pipelines/*/dag.png
 # Pixi
 .pixi/
 pixi.lock
+
+# Documentation
+site/
+
+# VHS output
+docs/assets/*.gif
+docs/assets/*.webm
+docs/assets/*.mp4
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Coverage
+*.profraw
+*.profdata
+coverage/
+lcov.info
