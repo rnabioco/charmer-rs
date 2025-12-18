@@ -213,8 +213,17 @@ impl App {
         self.show_help = !self.show_help;
     }
 
+    /// Toggle log viewer for the currently selected job.
+    pub fn toggle_log_viewer(&mut self) {
+        if self.show_log_viewer {
+            self.close_log_viewer();
+            return;
+        }
+        self.open_log_viewer();
+    }
+
     /// Open log viewer for the currently selected job.
-    pub fn open_log_viewer(&mut self) {
+    fn open_log_viewer(&mut self) {
         if let Some(job) = self.selected_job() {
             // Try to find a log file for this job
             let log_path = if !job.log_files.is_empty() {
@@ -305,7 +314,7 @@ impl App {
             KeyCode::Char('G') | KeyCode::End => self.select_last(),
             KeyCode::Char('f') => self.cycle_filter(),
             KeyCode::Char('s') => self.cycle_sort(),
-            KeyCode::Char('l') | KeyCode::Enter => self.open_log_viewer(),
+            KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
             KeyCode::Char('?') => self.toggle_help(),
             _ => {}
         }
