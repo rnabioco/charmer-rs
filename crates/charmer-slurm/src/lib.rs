@@ -2,10 +2,12 @@
 //!
 //! Query job status via squeue and sacct.
 
+pub mod failure;
 pub mod sacct;
 pub mod squeue;
 pub mod types;
 
+pub use failure::{analyze_failure, FailureAnalysis, FailureError, FailureMode};
 pub use sacct::{query_sacct, SacctError};
 pub use squeue::{query_squeue, SqueueError};
 pub use types::{SlurmJob, SlurmJobState};

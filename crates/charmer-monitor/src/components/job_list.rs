@@ -67,12 +67,10 @@ impl JobList {
                     item_style = item_style.add_modifier(Modifier::REVERSED);
                 }
 
-                Some(
-                    ListItem::new(Line::from(vec![
-                        Span::styled(format!("{} ", job.status.symbol()), status_style),
-                        Span::styled(label, item_style),
-                    ]))
-                )
+                Some(ListItem::new(Line::from(vec![
+                    Span::styled(format!("{} ", job.status.symbol()), status_style),
+                    Span::styled(label, item_style),
+                ])))
             })
             .collect();
 
@@ -101,11 +99,7 @@ fn render_progress_header(frame: &mut Frame, area: Rect, counts: &JobCounts, vis
     };
 
     // Build the title line with counts
-    let title = format!(
-        " Jobs ({}/{}) ",
-        visible,
-        counts.total
-    );
+    let title = format!(" Jobs ({}/{}) ", visible, counts.total);
 
     // Create a background progress bar effect
     let bar_width = area.width.saturating_sub(2) as usize; // Account for borders
@@ -119,7 +113,9 @@ fn render_progress_header(frame: &mut Frame, area: Rect, counts: &JobCounts, vis
     let status_line = Line::from(vec![
         Span::styled(
             format!("{}R ", counts.running),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!("{}C ", counts.completed),
@@ -127,7 +123,11 @@ fn render_progress_header(frame: &mut Frame, area: Rect, counts: &JobCounts, vis
         ),
         Span::styled(
             format!("{}F ", counts.failed),
-            Style::default().fg(if counts.failed > 0 { Color::Red } else { Color::DarkGray }),
+            Style::default().fg(if counts.failed > 0 {
+                Color::Red
+            } else {
+                Color::DarkGray
+            }),
         ),
         Span::styled(
             format!("{}Q", counts.queued + counts.pending),
@@ -142,7 +142,11 @@ fn render_progress_header(frame: &mut Frame, area: Rect, counts: &JobCounts, vis
     let block = Block::default()
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
         .title(title)
-        .title_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD));
+        .title_style(
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
 
     let paragraph = Paragraph::new(status_line).block(block);
 

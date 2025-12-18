@@ -2,7 +2,9 @@
 
 use charmer_lsf::{query_bhist, query_bjobs};
 use charmer_slurm::{query_sacct, query_squeue};
-use charmer_state::{merge_lsf_jobs, merge_slurm_jobs, PipelineState};
+use charmer_state::{
+    merge_lsf_jobs, merge_slurm_jobs, FailureAnalysis, FailureMode, JobStatus, PipelineState,
+};
 use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -167,6 +169,9 @@ impl PollingService {
         let mut state = self.state.lock().await;
         merge_slurm_jobs(&mut state, jobs, true);
 
+        // Enrich failed jobs with failure analysis
+        self.enrich_failed_jobs_slurm(&mut state).await;
+
         Ok(())
     }
 
@@ -190,7 +195,172 @@ impl PollingService {
         let mut state = self.state.lock().await;
         merge_lsf_jobs(&mut state, jobs, true);
 
+        // Enrich failed jobs with failure analysis
+        self.enrich_failed_jobs_lsf(&mut state).await;
+
         Ok(())
+    }
+
+    /// Enrich failed SLURM jobs with detailed failure analysis.
+    async fn enrich_failed_jobs_slurm(&self, state: &mut PipelineState) {
+        // Collect job IDs that need failure analysis
+        let jobs_needing_analysis: Vec<(String, String)> = state
+            .jobs
+            .iter()
+            .filter(|(_, job)| {
+                job.status == JobStatus::Failed
+                    && job.slurm_job_id.is_some()
+                    && job
+                        .error
+                        .as_ref()
+                        .map(|e| e.analysis.is_none())
+                        .unwrap_or(true)
+            })
+            .map(|(id, job)| (id.clone(), job.slurm_job_id.clone().unwrap()))
+            .take(5) // Limit to avoid too many queries
+            .collect();
+
+        // Analyze each failed job
+        for (job_id, slurm_job_id) in jobs_needing_analysis {
+            if let Ok(analysis) = charmer_slurm::analyze_failure(&slurm_job_id).await {
+                if let Some(job) = state.jobs.get_mut(&job_id) {
+                    // Convert SLURM analysis to unified format
+                    let unified_analysis = convert_slurm_analysis(&analysis);
+
+                    if let Some(ref mut error) = job.error {
+                        error.analysis = Some(unified_analysis);
+                    } else {
+                        // Create error with analysis
+                        job.error = Some(charmer_state::JobError {
+                            exit_code: match &analysis.mode {
+                                charmer_slurm::FailureMode::ExitCode { code, .. } => *code,
+                                _ => -1,
+                            },
+                            message: analysis.explanation.clone(),
+                            analysis: Some(unified_analysis),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Enrich failed LSF jobs with detailed failure analysis.
+    async fn enrich_failed_jobs_lsf(&self, state: &mut PipelineState) {
+        // Collect job IDs that need failure analysis
+        let jobs_needing_analysis: Vec<(String, String)> = state
+            .jobs
+            .iter()
+            .filter(|(_, job)| {
+                job.status == JobStatus::Failed
+                    && job.slurm_job_id.is_some() // LSF also uses slurm_job_id field
+                    && job.error.as_ref().map(|e| e.analysis.is_none()).unwrap_or(true)
+            })
+            .map(|(id, job)| (id.clone(), job.slurm_job_id.clone().unwrap()))
+            .take(5) // Limit to avoid too many queries
+            .collect();
+
+        // Analyze each failed job
+        for (job_id, lsf_job_id) in jobs_needing_analysis {
+            if let Ok(analysis) = charmer_lsf::analyze_failure(&lsf_job_id).await {
+                if let Some(job) = state.jobs.get_mut(&job_id) {
+                    // Convert LSF analysis to unified format
+                    let unified_analysis = convert_lsf_analysis(&analysis);
+
+                    if let Some(ref mut error) = job.error {
+                        error.analysis = Some(unified_analysis);
+                    } else {
+                        // Create error with analysis
+                        job.error = Some(charmer_state::JobError {
+                            exit_code: match &analysis.mode {
+                                charmer_lsf::FailureMode::ExitCode { code, .. } => *code,
+                                _ => -1,
+                            },
+                            message: analysis.explanation.clone(),
+                            analysis: Some(unified_analysis),
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Convert SLURM failure analysis to unified format.
+fn convert_slurm_analysis(analysis: &charmer_slurm::FailureAnalysis) -> FailureAnalysis {
+    let mode = match &analysis.mode {
+        charmer_slurm::FailureMode::OutOfMemory { .. } => FailureMode::OutOfMemory,
+        charmer_slurm::FailureMode::Timeout { .. } => FailureMode::Timeout,
+        charmer_slurm::FailureMode::ExitCode { .. } => FailureMode::ExitCode,
+        charmer_slurm::FailureMode::Cancelled { .. } => FailureMode::Cancelled,
+        charmer_slurm::FailureMode::NodeFailure { .. } => FailureMode::NodeFailure,
+        charmer_slurm::FailureMode::Unknown { .. } => FailureMode::Unknown,
+    };
+
+    let (memory_used_mb, memory_limit_mb) = match &analysis.mode {
+        charmer_slurm::FailureMode::OutOfMemory {
+            used_mb,
+            requested_mb,
+            ..
+        } => (Some(*used_mb), Some(*requested_mb)),
+        _ => (analysis.max_rss_mb, analysis.req_mem_mb),
+    };
+
+    let (runtime_seconds, time_limit_seconds) = match &analysis.mode {
+        charmer_slurm::FailureMode::Timeout {
+            elapsed_seconds,
+            limit_seconds,
+            ..
+        } => (Some(*elapsed_seconds), Some(*limit_seconds)),
+        _ => (analysis.elapsed_seconds, analysis.time_limit_seconds),
+    };
+
+    FailureAnalysis {
+        mode,
+        explanation: analysis.explanation.clone(),
+        suggestion: analysis.suggestion.clone(),
+        memory_used_mb,
+        memory_limit_mb,
+        runtime_seconds,
+        time_limit_seconds,
+    }
+}
+
+/// Convert LSF failure analysis to unified format.
+fn convert_lsf_analysis(analysis: &charmer_lsf::FailureAnalysis) -> FailureAnalysis {
+    let mode = match &analysis.mode {
+        charmer_lsf::FailureMode::OutOfMemory { .. } => FailureMode::OutOfMemory,
+        charmer_lsf::FailureMode::Timeout { .. } => FailureMode::Timeout,
+        charmer_lsf::FailureMode::ExitCode { .. } => FailureMode::ExitCode,
+        charmer_lsf::FailureMode::Killed { .. } => FailureMode::Cancelled,
+        charmer_lsf::FailureMode::HostFailure { .. } => FailureMode::NodeFailure,
+        charmer_lsf::FailureMode::Unknown { .. } => FailureMode::Unknown,
+    };
+
+    let (memory_used_mb, memory_limit_mb) = match &analysis.mode {
+        charmer_lsf::FailureMode::OutOfMemory {
+            used_mb, limit_mb, ..
+        } => (Some(*used_mb), Some(*limit_mb)),
+        _ => (analysis.max_mem_mb, analysis.mem_limit_mb),
+    };
+
+    let (runtime_seconds, time_limit_seconds) = match &analysis.mode {
+        charmer_lsf::FailureMode::Timeout {
+            elapsed_seconds,
+            limit_seconds,
+            ..
+        } => (Some(*elapsed_seconds), Some(*limit_seconds)),
+        _ => (analysis.run_time_seconds, analysis.run_limit_seconds),
+    };
+
+    FailureAnalysis {
+        mode,
+        explanation: analysis.explanation.clone(),
+        suggestion: analysis.suggestion.clone(),
+        memory_used_mb,
+        memory_limit_mb,
+        runtime_seconds,
+        time_limit_seconds,
     }
 }
 

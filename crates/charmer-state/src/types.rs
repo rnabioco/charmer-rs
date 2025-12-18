@@ -54,14 +54,17 @@ impl ToJobStatus for charmer_slurm::SlurmJobState {
             Self::Failed { exit_code, error } => Some(JobError {
                 exit_code: *exit_code,
                 message: error.clone(),
+                analysis: None, // Will be populated by failure analysis
             }),
             Self::Timeout => Some(JobError {
                 exit_code: -1,
                 message: "Job exceeded time limit".to_string(),
+                analysis: None,
             }),
             Self::OutOfMemory => Some(JobError {
                 exit_code: -1,
                 message: "Job exceeded memory limit".to_string(),
+                analysis: None,
             }),
             _ => None,
         }
@@ -88,6 +91,7 @@ impl ToJobStatus for charmer_lsf::LsfJobState {
             Self::Exit { exit_code, error } => Some(JobError {
                 exit_code: *exit_code,
                 message: error.clone(),
+                analysis: None, // Will be populated by failure analysis
             }),
             _ => None,
         }
@@ -131,6 +135,44 @@ pub struct JobResources {
 pub struct JobError {
     pub exit_code: i32,
     pub message: String,
+    /// Detailed failure analysis (if available)
+    pub analysis: Option<FailureAnalysis>,
+}
+
+/// Detailed failure analysis from SLURM/LSF.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailureAnalysis {
+    /// Classified failure mode
+    pub mode: FailureMode,
+    /// Human-readable explanation
+    pub explanation: String,
+    /// Suggested fix
+    pub suggestion: String,
+    /// Memory used (MB) if available
+    pub memory_used_mb: Option<u64>,
+    /// Memory limit (MB) if available
+    pub memory_limit_mb: Option<u64>,
+    /// Runtime (seconds) if available
+    pub runtime_seconds: Option<u64>,
+    /// Time limit (seconds) if available
+    pub time_limit_seconds: Option<u64>,
+}
+
+/// Failure mode classification.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FailureMode {
+    /// Job ran out of memory
+    OutOfMemory,
+    /// Job exceeded time limit
+    Timeout,
+    /// Job failed with exit code
+    ExitCode,
+    /// Job was cancelled/killed
+    Cancelled,
+    /// Node/host failure
+    NodeFailure,
+    /// Unknown failure
+    Unknown,
 }
 
 /// Data source flags.

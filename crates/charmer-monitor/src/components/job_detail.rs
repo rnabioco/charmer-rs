@@ -1,6 +1,6 @@
 //! Job detail panel with rich formatting.
 
-use charmer_state::{Job, JobStatus};
+use charmer_state::{FailureMode, Job, JobStatus};
 use chrono::Utc;
 use ratatui::{
     layout::Rect,
@@ -51,7 +51,9 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         ]));
     } else {
         // Try to extract sample from output path
-        if let Some(sample) = extract_sample_from_path(&job.outputs.first().cloned().unwrap_or_default()) {
+        if let Some(sample) =
+            extract_sample_from_path(&job.outputs.first().cloned().unwrap_or_default())
+        {
             lines.push(Line::from(vec![
                 Span::styled("Sample: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(sample, Style::default().fg(Color::Yellow)),
@@ -75,7 +77,9 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         Span::styled("Status: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
             format!("{} {}", job.status.symbol(), status_text),
-            Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(status_color)
+                .add_modifier(Modifier::BOLD),
         ),
     ]));
 
@@ -138,7 +142,10 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     if let Some(ref time_limit) = job.resources.time_limit {
         lines.push(Line::from(vec![
             Span::styled("  Time Limit: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format_duration(time_limit), Style::default().fg(Color::Yellow)),
+            Span::styled(
+                format_duration(time_limit),
+                Style::default().fg(Color::Yellow),
+            ),
         ]));
     }
 
@@ -157,7 +164,10 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         let wait = started - queued;
         lines.push(Line::from(vec![
             Span::styled("  Wait: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format_chrono_duration(&wait), Style::default().fg(Color::Blue)),
+            Span::styled(
+                format_chrono_duration(&wait),
+                Style::default().fg(Color::Blue),
+            ),
         ]));
     }
 
@@ -175,7 +185,10 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         };
         lines.push(Line::from(vec![
             Span::styled("  Runtime: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(format_chrono_duration(&runtime), Style::default().fg(runtime_color)),
+            Span::styled(
+                format_chrono_duration(&runtime),
+                Style::default().fg(runtime_color),
+            ),
         ]));
     }
 
@@ -199,24 +212,125 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                 .fg(Color::Red)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )));
-        lines.push(Line::from(vec![
-            Span::styled("  Exit Code: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                error.exit_code.to_string(),
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        if !error.message.is_empty() {
-            // Truncate long error messages
-            let msg = if error.message.len() > 50 {
-                format!("{}...", &error.message[..47])
-            } else {
-                error.message.clone()
+
+        // Show failure analysis if available
+        if let Some(ref analysis) = error.analysis {
+            // Failure mode with icon and color
+            let (mode_icon, mode_text, mode_color) = match analysis.mode {
+                FailureMode::OutOfMemory => ("⚠", "Out of Memory", Color::Red),
+                FailureMode::Timeout => ("⏱", "Timeout", Color::Yellow),
+                FailureMode::ExitCode => ("✗", "Exit Code Error", Color::Red),
+                FailureMode::Cancelled => ("⊘", "Cancelled", Color::Magenta),
+                FailureMode::NodeFailure => ("⚡", "Node Failure", Color::LightRed),
+                FailureMode::Unknown => ("?", "Unknown", Color::DarkGray),
             };
             lines.push(Line::from(vec![
-                Span::styled("  Message: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(msg, Style::default().fg(Color::Red)),
+                Span::styled("  Failure: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("{} {}", mode_icon, mode_text),
+                    Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
+                ),
             ]));
+
+            // Memory details for OOM
+            if analysis.mode == FailureMode::OutOfMemory {
+                if let (Some(used), Some(limit)) =
+                    (analysis.memory_used_mb, analysis.memory_limit_mb)
+                {
+                    lines.push(Line::from(vec![
+                        Span::styled("  Memory: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format!("{:.1} GB", used as f64 / 1024.0),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" / ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format!("{:.1} GB limit", limit as f64 / 1024.0),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ]));
+                }
+            }
+
+            // Time details for Timeout
+            if analysis.mode == FailureMode::Timeout {
+                if let (Some(runtime), Some(limit)) =
+                    (analysis.runtime_seconds, analysis.time_limit_seconds)
+                {
+                    lines.push(Line::from(vec![
+                        Span::styled("  Time: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format_seconds(runtime),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(" / ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(
+                            format!("{} limit", format_seconds(limit)),
+                            Style::default().fg(Color::DarkGray),
+                        ),
+                    ]));
+                }
+            }
+
+            // Explanation
+            if !analysis.explanation.is_empty() {
+                // Wrap long explanations
+                let explanation = if analysis.explanation.len() > 45 {
+                    format!("{}...", &analysis.explanation[..42])
+                } else {
+                    analysis.explanation.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(explanation, Style::default().fg(Color::White)),
+                ]));
+            }
+
+            // Suggestion (highlighted)
+            if !analysis.suggestion.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Suggestion",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                )));
+                // Handle multi-line suggestions
+                for line in analysis.suggestion.lines().take(3) {
+                    let suggestion_line = if line.len() > 45 {
+                        format!("{}...", &line[..42])
+                    } else {
+                        line.to_string()
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(suggestion_line, Style::default().fg(Color::Green)),
+                    ]));
+                }
+            }
+        } else {
+            // No analysis available - show basic error info
+            lines.push(Line::from(vec![
+                Span::styled("  Exit Code: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    error.exit_code.to_string(),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            if !error.message.is_empty() {
+                // Truncate long error messages
+                let msg = if error.message.len() > 50 {
+                    format!("{}...", &error.message[..47])
+                } else {
+                    error.message.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  Message: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(msg, Style::default().fg(Color::Red)),
+                ]));
+            }
         }
     }
 
@@ -266,11 +380,12 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
             .chars()
             .take(45)
             .collect();
-        let cmd_display = if cmd_preview.len() < job.shellcmd.lines().next().map(|l| l.len()).unwrap_or(0) {
-            format!("{}...", cmd_preview)
-        } else {
-            cmd_preview
-        };
+        let cmd_display =
+            if cmd_preview.len() < job.shellcmd.lines().next().map(|l| l.len()).unwrap_or(0) {
+                format!("{}...", cmd_preview)
+            } else {
+                cmd_preview
+            };
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(cmd_display, Style::default().fg(Color::DarkGray)),
@@ -312,6 +427,18 @@ fn format_duration(d: &std::time::Duration) -> String {
 
 fn format_chrono_duration(d: &chrono::Duration) -> String {
     let secs = d.num_seconds().unsigned_abs();
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    let secs = secs % 60;
+
+    if hours > 0 {
+        format!("{:02}:{:02}:{:02}", hours, mins, secs)
+    } else {
+        format!("{:02}:{:02}", mins, secs)
+    }
+}
+
+fn format_seconds(secs: u64) -> String {
     let hours = secs / 3600;
     let mins = (secs % 3600) / 60;
     let secs = secs % 60;
