@@ -25,6 +25,75 @@ pub enum JobStatus {
     Unknown,
 }
 
+/// Trait for converting scheduler-specific states to unified JobStatus.
+pub trait ToJobStatus {
+    /// Convert to unified JobStatus.
+    fn to_job_status(&self) -> JobStatus;
+
+    /// Extract error information if the job failed.
+    fn to_job_error(&self) -> Option<JobError>;
+}
+
+// Implementation for SLURM job states
+impl ToJobStatus for charmer_slurm::SlurmJobState {
+    fn to_job_status(&self) -> JobStatus {
+        match self {
+            Self::Pending => JobStatus::Queued,
+            Self::Running => JobStatus::Running,
+            Self::Completed { .. } => JobStatus::Completed,
+            Self::Failed { .. } => JobStatus::Failed,
+            Self::Cancelled => JobStatus::Cancelled,
+            Self::Timeout => JobStatus::Failed,
+            Self::OutOfMemory => JobStatus::Failed,
+            Self::Unknown(_) => JobStatus::Unknown,
+        }
+    }
+
+    fn to_job_error(&self) -> Option<JobError> {
+        match self {
+            Self::Failed { exit_code, error } => Some(JobError {
+                exit_code: *exit_code,
+                message: error.clone(),
+            }),
+            Self::Timeout => Some(JobError {
+                exit_code: -1,
+                message: "Job exceeded time limit".to_string(),
+            }),
+            Self::OutOfMemory => Some(JobError {
+                exit_code: -1,
+                message: "Job exceeded memory limit".to_string(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+// Implementation for LSF job states
+impl ToJobStatus for charmer_lsf::LsfJobState {
+    fn to_job_status(&self) -> JobStatus {
+        match self {
+            Self::Pending => JobStatus::Queued,
+            Self::Running => JobStatus::Running,
+            Self::Done { .. } => JobStatus::Completed,
+            Self::Exit { .. } => JobStatus::Failed,
+            Self::UserSuspendedPending | Self::UserSuspended => JobStatus::Pending,
+            Self::SystemSuspended => JobStatus::Pending,
+            Self::Zombie => JobStatus::Unknown,
+            Self::Unknown(_) => JobStatus::Unknown,
+        }
+    }
+
+    fn to_job_error(&self) -> Option<JobError> {
+        match self {
+            Self::Exit { exit_code, error } => Some(JobError {
+                exit_code: *exit_code,
+                message: error.clone(),
+            }),
+            _ => None,
+        }
+    }
+}
+
 impl JobStatus {
     pub fn symbol(&self) -> &'static str {
         match self {
