@@ -1,7 +1,10 @@
 //! Query active LSF jobs via bjobs.
 
 use crate::types::{LsfJob, LsfJobState};
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use charmer_parsers::{
+    non_empty_string, parse_lsf_timestamp, parse_memory_mb, run_command_allow_failure,
+    split_delimited, MemoryFormat,
+};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
@@ -17,54 +20,6 @@ pub enum BjobsError {
 /// bjobs output format (using -o with delimiter)
 /// JOBID STAT QUEUE SUBMIT_TIME START_TIME FINISH_TIME EXEC_HOST NPROCS MEMLIMIT JOB_DESCRIPTION
 const BJOBS_FORMAT: &str = "jobid stat queue submit_time start_time finish_time exec_host nprocs memlimit job_description delimiter='|'";
-
-/// Parse LSF timestamp format (Mon DD HH:MM or Mon DD HH:MM YYYY)
-fn parse_lsf_time(s: &str) -> Option<DateTime<Utc>> {
-    use chrono::Datelike;
-
-    if s.is_empty() || s == "-" {
-        return None;
-    }
-
-    // LSF uses formats like "Dec 18 10:30" or "Dec 18 10:30 2024"
-    let current_year = Utc::now().year();
-
-    // Try with year first
-    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%b %d %H:%M %Y") {
-        return Utc.from_local_datetime(&dt).single();
-    }
-
-    // Try without year (assume current year)
-    if let Ok(dt) =
-        NaiveDateTime::parse_from_str(&format!("{} {}", s, current_year), "%b %d %H:%M %Y")
-    {
-        return Utc.from_local_datetime(&dt).single();
-    }
-
-    None
-}
-
-/// Parse LSF memory string (e.g., "4 GB", "1000 MB").
-fn parse_memory(s: &str) -> Option<u64> {
-    if s.is_empty() || s == "-" {
-        return None;
-    }
-
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let value: f64 = parts[0].parse().ok()?;
-    let unit = parts.get(1).map(|s| s.to_uppercase()).unwrap_or_default();
-
-    match unit.as_str() {
-        "GB" | "G" => Some((value * 1024.0) as u64),
-        "MB" | "M" | "" => Some(value as u64),
-        "KB" | "K" => Some((value / 1024.0) as u64),
-        _ => Some(value as u64),
-    }
-}
 
 /// Parse LSF state string.
 fn parse_state(s: &str) -> LsfJobState {
@@ -89,29 +44,22 @@ fn parse_state(s: &str) -> LsfJobState {
 
 /// Parse a single line of bjobs output.
 fn parse_bjobs_line(line: &str) -> Result<LsfJob, BjobsError> {
-    let fields: Vec<&str> = line.split('|').collect();
-    if fields.len() < 10 {
-        return Err(BjobsError::ParseError(format!(
-            "Expected 10 fields, got {}: {}",
-            fields.len(),
-            line
-        )));
-    }
+    let fields = split_delimited(line, 10).map_err(BjobsError::ParseError)?;
 
     Ok(LsfJob {
         job_id: fields[0].trim().to_string(),
         name: String::new(), // bjobs doesn't include name in this format
         state: parse_state(fields[1].trim()),
-        queue: Some(fields[2].trim().to_string()).filter(|s| !s.is_empty() && s != "-"),
-        submit_time: parse_lsf_time(fields[3].trim()),
-        start_time: parse_lsf_time(fields[4].trim()),
-        end_time: parse_lsf_time(fields[5].trim()),
-        exec_host: Some(fields[6].trim().to_string()).filter(|s| !s.is_empty() && s != "-"),
+        queue: non_empty_string(fields[2]),
+        submit_time: parse_lsf_timestamp(fields[3].trim()),
+        start_time: parse_lsf_timestamp(fields[4].trim()),
+        end_time: parse_lsf_timestamp(fields[5].trim()),
+        exec_host: non_empty_string(fields[6]),
         nprocs: fields[7].trim().parse().ok(),
-        mem_limit_mb: parse_memory(fields[8].trim()),
+        mem_limit_mb: parse_memory_mb(fields[8].trim(), MemoryFormat::Lsf),
         mem_used_mb: None,
         run_limit: None,
-        description: Some(fields[9].trim().to_string()).filter(|s| !s.is_empty() && s != "-"),
+        description: non_empty_string(fields[9]),
     })
 }
 
@@ -125,13 +73,11 @@ pub async fn query_bjobs(job_name_filter: Option<&str>) -> Result<Vec<LsfJob>, B
         cmd.args(["-J", name]);
     }
 
-    let output = cmd
-        .output()
+    // bjobs returns non-zero if no jobs found, which is OK
+    let stdout = run_command_allow_failure(&mut cmd, "bjobs")
         .await
         .map_err(|e| BjobsError::ExecutionError(e.to_string()))?;
 
-    // bjobs returns non-zero if no jobs found, which is OK
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut jobs = Vec::new();
 
     for line in stdout.lines() {
@@ -151,6 +97,7 @@ pub async fn query_bjobs(job_name_filter: Option<&str>) -> Result<Vec<LsfJob>, B
 #[cfg(test)]
 mod tests {
     use super::*;
+    use charmer_parsers::parse_lsf_timestamp;
 
     #[test]
     fn test_parse_state() {
@@ -162,9 +109,18 @@ mod tests {
 
     #[test]
     fn test_parse_memory() {
-        assert_eq!(parse_memory("4 GB"), Some(4096));
-        assert_eq!(parse_memory("1000 MB"), Some(1000));
-        assert_eq!(parse_memory("1000"), Some(1000));
-        assert!(parse_memory("-").is_none());
+        assert_eq!(parse_memory_mb("4 GB", MemoryFormat::Lsf), Some(4096));
+        assert_eq!(parse_memory_mb("1000 MB", MemoryFormat::Lsf), Some(1000));
+        assert_eq!(parse_memory_mb("1000", MemoryFormat::Lsf), Some(1000));
+        assert!(parse_memory_mb("-", MemoryFormat::Lsf).is_none());
+    }
+
+    #[test]
+    fn test_parse_lsf_time() {
+        // With year
+        let dt = parse_lsf_timestamp("Dec 18 10:30 2024").unwrap();
+        assert_eq!(dt.format("%Y-%m-%d").to_string(), "2024-12-18");
+
+        assert!(parse_lsf_timestamp("-").is_none());
     }
 }

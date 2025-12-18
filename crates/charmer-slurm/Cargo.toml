@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+charmer-parsers.workspace = true
 tokio.workspace = true
 regex.workspace = true
 thiserror.workspace = true

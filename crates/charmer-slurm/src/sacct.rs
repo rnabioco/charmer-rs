@@ -1,7 +1,11 @@
 //! Query SLURM job history via sacct.
 
 use crate::types::{SlurmJob, SlurmJobState};
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use charmer_parsers::{
+    non_empty_string, parse_duration, parse_exit_code, parse_memory_mb, parse_slurm_timestamp,
+    run_command, split_delimited, MemoryFormat,
+};
+use chrono::{DateTime, Utc};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
@@ -18,72 +22,6 @@ pub enum SacctError {
 /// JobIDRaw, JobName, State, Partition, Submit, Start, End, NodeList, AllocCPUS, ReqMem, Timelimit, Comment, ExitCode
 const SACCT_FORMAT: &str =
     "JobIDRaw,JobName,State,Partition,Submit,Start,End,NodeList,AllocCPUS,ReqMem,Timelimit,Comment,ExitCode";
-
-/// Parse a SLURM timestamp (YYYY-MM-DDTHH:MM:SS or "Unknown").
-fn parse_slurm_time(s: &str) -> Option<DateTime<Utc>> {
-    if s.is_empty() || s == "Unknown" || s == "None" {
-        return None;
-    }
-    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-        .ok()
-        .and_then(|dt| Utc.from_local_datetime(&dt).single())
-}
-
-/// Parse a SLURM time limit (D-HH:MM:SS or HH:MM:SS or MM:SS).
-fn parse_time_limit(s: &str) -> Option<Duration> {
-    if s.is_empty() || s == "UNLIMITED" {
-        return None;
-    }
-
-    let parts: Vec<&str> = s.split('-').collect();
-    let (days, time_part) = if parts.len() == 2 {
-        (parts[0].parse::<u64>().unwrap_or(0), parts[1])
-    } else {
-        (0, parts[0])
-    };
-
-    let time_parts: Vec<u64> = time_part
-        .split(':')
-        .filter_map(|p| p.parse().ok())
-        .collect();
-
-    let seconds = match time_parts.len() {
-        3 => time_parts[0] * 3600 + time_parts[1] * 60 + time_parts[2],
-        2 => time_parts[0] * 60 + time_parts[1],
-        1 => time_parts[0],
-        _ => return None,
-    };
-
-    Some(Duration::from_secs(days * 86400 + seconds))
-}
-
-/// Parse memory string (e.g., "4Gn", "1000Mn", "4096").
-fn parse_memory(s: &str) -> Option<u64> {
-    if s.is_empty() {
-        return None;
-    }
-
-    // sacct memory can have 'n' or 'c' suffix (per node/per core)
-    let s = s.trim().trim_end_matches('n').trim_end_matches('c');
-
-    if let Some(stripped) = s.strip_suffix('G') {
-        stripped.parse::<u64>().ok().map(|v| v * 1024)
-    } else if let Some(stripped) = s.strip_suffix('M') {
-        stripped.parse::<u64>().ok()
-    } else if let Some(stripped) = s.strip_suffix('K') {
-        stripped.parse::<u64>().ok().map(|v| v / 1024)
-    } else {
-        s.parse::<u64>().ok()
-    }
-}
-
-/// Parse exit code (format: "exit_code:signal").
-fn parse_exit_code(s: &str) -> i32 {
-    s.split(':')
-        .next()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
-}
 
 /// Parse sacct state string with exit code info.
 fn parse_state(state_str: &str, exit_code_str: &str) -> SlurmJobState {
@@ -116,14 +54,7 @@ fn parse_state(state_str: &str, exit_code_str: &str) -> SlurmJobState {
 
 /// Parse a single line of sacct output.
 fn parse_sacct_line(line: &str) -> Result<SlurmJob, SacctError> {
-    let fields: Vec<&str> = line.split('|').collect();
-    if fields.len() < 13 {
-        return Err(SacctError::ParseError(format!(
-            "Expected 13 fields, got {}: {}",
-            fields.len(),
-            line
-        )));
-    }
+    let fields = split_delimited(line, 13).map_err(SacctError::ParseError)?;
 
     let state = parse_state(fields[2], fields[12]);
 
@@ -131,15 +62,15 @@ fn parse_sacct_line(line: &str) -> Result<SlurmJob, SacctError> {
         job_id: fields[0].to_string(),
         name: fields[1].to_string(),
         state,
-        partition: Some(fields[3].to_string()).filter(|s| !s.is_empty()),
-        submit_time: parse_slurm_time(fields[4]),
-        start_time: parse_slurm_time(fields[5]),
-        end_time: parse_slurm_time(fields[6]),
-        nodelist: Some(fields[7].to_string()).filter(|s| !s.is_empty()),
+        partition: non_empty_string(fields[3]),
+        submit_time: parse_slurm_timestamp(fields[4]),
+        start_time: parse_slurm_timestamp(fields[5]),
+        end_time: parse_slurm_timestamp(fields[6]),
+        nodelist: non_empty_string(fields[7]),
         cpus: fields[8].parse().ok(),
-        mem_mb: parse_memory(fields[9]),
-        time_limit: parse_time_limit(fields[10]),
-        comment: Some(fields[11].to_string()).filter(|s| !s.is_empty()),
+        mem_mb: parse_memory_mb(fields[9], MemoryFormat::SlurmSacct),
+        time_limit: parse_duration(fields[10]),
+        comment: non_empty_string(fields[11]),
     })
 }
 
@@ -165,17 +96,10 @@ pub async fn query_sacct(
         cmd.args(["--name", uuid]);
     }
 
-    let output = cmd
-        .output()
+    let stdout = run_command(&mut cmd, "sacct")
         .await
         .map_err(|e| SacctError::ExecutionError(e.to_string()))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SacctError::ExecutionError(stderr.to_string()));
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut jobs = Vec::new();
 
     for line in stdout.lines() {

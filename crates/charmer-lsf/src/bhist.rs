@@ -1,7 +1,8 @@
 //! Query LSF job history via bhist.
 
 use crate::types::{LsfJob, LsfJobState};
-use chrono::{DateTime, Datelike, NaiveDateTime, TimeZone, Utc};
+use charmer_parsers::{parse_memory_mb, run_command_allow_failure, MemoryFormat};
+use chrono::{DateTime, Utc};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
@@ -12,71 +13,6 @@ pub enum BhistError {
     ExecutionError(String),
     #[error("Failed to parse bhist output: {0}")]
     ParseError(String),
-}
-
-/// Parse LSF timestamp format (Mon DD HH:MM or Mon DD HH:MM YYYY)
-#[allow(dead_code)]
-fn parse_lsf_time(s: &str) -> Option<DateTime<Utc>> {
-    if s.is_empty() || s == "-" {
-        return None;
-    }
-
-    let current_year = Utc::now().year();
-
-    // Try with year first
-    if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%b %d %H:%M %Y") {
-        return Utc.from_local_datetime(&dt).single();
-    }
-
-    // Try without year
-    if let Ok(dt) =
-        NaiveDateTime::parse_from_str(&format!("{} {}", s, current_year), "%b %d %H:%M %Y")
-    {
-        return Utc.from_local_datetime(&dt).single();
-    }
-
-    None
-}
-
-/// Parse LSF memory string.
-fn parse_memory(s: &str) -> Option<u64> {
-    if s.is_empty() || s == "-" {
-        return None;
-    }
-
-    let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.is_empty() {
-        return None;
-    }
-
-    let value: f64 = parts[0].parse().ok()?;
-    let unit = parts.get(1).map(|s| s.to_uppercase()).unwrap_or_default();
-
-    match unit.as_str() {
-        "GB" | "G" => Some((value * 1024.0) as u64),
-        "MB" | "M" | "" => Some(value as u64),
-        "KB" | "K" => Some((value / 1024.0) as u64),
-        _ => Some(value as u64),
-    }
-}
-
-/// Parse LSF run time string (HH:MM:SS or seconds).
-#[allow(dead_code)]
-fn parse_runtime(s: &str) -> Option<Duration> {
-    if s.is_empty() || s == "-" {
-        return None;
-    }
-
-    // Try HH:MM:SS format
-    let parts: Vec<u64> = s.split(':').filter_map(|p| p.parse().ok()).collect();
-    match parts.len() {
-        3 => Some(Duration::from_secs(
-            parts[0] * 3600 + parts[1] * 60 + parts[2],
-        )),
-        2 => Some(Duration::from_secs(parts[0] * 60 + parts[1])),
-        1 => Some(Duration::from_secs(parts[0])),
-        _ => s.parse::<u64>().ok().map(Duration::from_secs),
-    }
 }
 
 /// Query job history with bhist.
@@ -93,12 +29,9 @@ pub async fn query_bhist(
         cmd.args(["-J", name]);
     }
 
-    let output = cmd
-        .output()
+    let stdout = run_command_allow_failure(&mut cmd, "bhist")
         .await
         .map_err(|e| BhistError::ExecutionError(e.to_string()))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
 
     // bhist -l output is complex multi-line format, parse job blocks
     parse_bhist_long_output(&stdout, since)
@@ -164,7 +97,7 @@ fn parse_bhist_long_output(
                 }
             }
             if line.starts_with("Submitted from") || line.contains("submitted from") {
-                // Parse submit time from context
+                // Parse submit time from context - LSF format varies
             }
             if line.contains("Started on") {
                 if let Some(host_start) = line.find("Started on <") {
@@ -193,7 +126,8 @@ fn parse_bhist_long_output(
             }
             if line.contains("MAX MEM:") {
                 if let Some(mem_str) = line.split("MAX MEM:").nth(1) {
-                    job.mem_used_mb = parse_memory(mem_str.trim().split(';').next().unwrap_or(""));
+                    let mem_part = mem_str.trim().split(';').next().unwrap_or("");
+                    job.mem_used_mb = parse_memory_mb(mem_part, MemoryFormat::Lsf);
                 }
             }
         }
@@ -216,12 +150,13 @@ fn parse_bhist_long_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use charmer_parsers::parse_duration;
 
     #[test]
     fn test_parse_runtime() {
-        assert_eq!(parse_runtime("1:30:00"), Some(Duration::from_secs(5400)));
-        assert_eq!(parse_runtime("30:00"), Some(Duration::from_secs(1800)));
-        assert_eq!(parse_runtime("3600"), Some(Duration::from_secs(3600)));
-        assert!(parse_runtime("-").is_none());
+        assert_eq!(parse_duration("1:30:00"), Some(Duration::from_secs(5400)));
+        assert_eq!(parse_duration("30:00"), Some(Duration::from_secs(1800)));
+        assert_eq!(parse_duration("3600"), Some(Duration::from_secs(3600)));
+        assert!(parse_duration("-").is_none());
     }
 }

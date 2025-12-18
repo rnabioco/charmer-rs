@@ -1,11 +1,13 @@
 [package]
-name = "charmer-lsf"
+name = "charmer-parsers"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+description = "Shared parsing utilities for scheduler output"
 
 [dependencies]
-charmer-parsers.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
