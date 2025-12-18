@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "charmer"
 version = "0.1.0"
 description = "Snakemake pipeline monitor TUI for SLURM clusters"
@@ -9,8 +9,8 @@ platforms = ["osx-arm64", "osx-64", "linux-64"]
 # Run a test snakemake pipeline (local execution)
 test-pipeline = "cd tests/pipelines/simple && snakemake --cores 2 --snakefile Snakefile"
 
-# Clean test pipeline outputs
-clean-test = "cd tests/pipelines/simple && snakemake --cores 1 --delete-all-output"
+# Clean test pipeline outputs (including .snakemake metadata)
+clean-test = "cd tests/pipelines/simple && rm -rf results .snakemake"
 
 # Dry run to see what would be executed
 dry-run = "cd tests/pipelines/simple && snakemake --cores 2 --dry-run"
@@ -29,6 +29,9 @@ test = "cargo test"
 
 # Run charmer in development mode
 run = "cargo run -- ."
+
+# Monitor the test pipeline
+monitor-test = "cargo run -- tests/pipelines/simple"
 
 # Format code
 fmt = "cargo fmt"

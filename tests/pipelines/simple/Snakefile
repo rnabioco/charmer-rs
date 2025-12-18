@@ -1,18 +1,19 @@
 # Simple test pipeline for charmer development
-# Simulates a basic bioinformatics workflow
+# Simulates a basic bioinformatics workflow (~2 minutes with 2 cores)
 
-SAMPLES = ["sample1", "sample2", "sample3"]
-CHROMOSOMES = ["chr1", "chr2"]
+SAMPLES = ["sample1", "sample2", "sample3", "sample4"]
+CHROMOSOMES = ["chr1", "chr2", "chr3"]
 
 rule all:
     input:
         "results/final_report.txt"
 
 rule process_sample:
+    """Initial sample processing - runs first for all samples."""
     output:
         "results/processed/{sample}.txt"
     params:
-        delay = 2
+        delay = 5
     shell:
         """
         echo "Processing {wildcards.sample}..."
@@ -21,12 +22,13 @@ rule process_sample:
         """
 
 rule align_sample:
+    """Alignment step - depends on processing."""
     input:
         "results/processed/{sample}.txt"
     output:
         "results/aligned/{sample}.bam"
     params:
-        delay = 3
+        delay = 8
     shell:
         """
         echo "Aligning {wildcards.sample}..."
@@ -35,12 +37,13 @@ rule align_sample:
         """
 
 rule call_variants:
+    """Variant calling per chromosome - depends on alignment."""
     input:
         bam = "results/aligned/{sample}.bam"
     output:
         vcf = "results/variants/{sample}_{chrom}.vcf"
     params:
-        delay = 2
+        delay = 6
     shell:
         """
         echo "Calling variants for {wildcards.sample} on {wildcards.chrom}..."
@@ -48,31 +51,52 @@ rule call_variants:
         echo "Variants: {wildcards.sample} {wildcards.chrom}" > {output.vcf}
         """
 
-rule merge_variants:
+rule merge_sample_variants:
+    """Merge variants per sample across chromosomes."""
     input:
-        expand("results/variants/{sample}_{chrom}.vcf", sample=SAMPLES, chrom=CHROMOSOMES)
+        expand("results/variants/{{sample}}_{chrom}.vcf", chrom=CHROMOSOMES)
     output:
-        "results/merged_variants.vcf"
+        "results/merged/{sample}_merged.vcf"
     params:
-        delay = 2
+        delay = 4
     shell:
         """
-        echo "Merging all variants..."
+        echo "Merging variants for {wildcards.sample}..."
+        sleep {params.delay}
+        cat {input} > {output}
+        """
+
+rule final_merge:
+    """Final merge of all sample variants."""
+    input:
+        expand("results/merged/{sample}_merged.vcf", sample=SAMPLES)
+    output:
+        "results/all_variants.vcf"
+    params:
+        delay = 5
+    shell:
+        """
+        echo "Final merge of all variants..."
         sleep {params.delay}
         cat {input} > {output}
         """
 
 rule generate_report:
+    """Generate final pipeline report."""
     input:
-        vcf = "results/merged_variants.vcf",
+        vcf = "results/all_variants.vcf",
         bams = expand("results/aligned/{sample}.bam", sample=SAMPLES)
     output:
         "results/final_report.txt"
+    params:
+        delay = 3
     shell:
         """
         echo "Generating final report..."
+        sleep {params.delay}
         echo "=== Pipeline Complete ===" > {output}
         echo "Samples: {SAMPLES}" >> {output}
         echo "Chromosomes: {CHROMOSOMES}" >> {output}
+        echo "Total jobs: $(find results -type f | wc -l)" >> {output}
         date >> {output}
         """

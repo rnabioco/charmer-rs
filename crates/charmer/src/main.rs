@@ -4,7 +4,7 @@ mod polling;
 mod watcher;
 
 use charmer_cli::Args;
-use charmer_core::parse_metadata_file;
+use charmer_core::{parse_metadata_file, scan_metadata_dir};
 use charmer_monitor::App;
 use charmer_state::{merge_snakemake_jobs, PipelineState};
 use clap::Parser;
@@ -29,6 +29,24 @@ async fn main() -> Result<()> {
 
     // Initialize pipeline state wrapped in Arc<Mutex<>> for sharing with polling service
     let state = Arc::new(Mutex::new(PipelineState::new(args.dir.clone())));
+
+    // Scan existing metadata files on startup, filtering to recent jobs
+    if let Ok(existing_jobs) = scan_metadata_dir(&args.dir) {
+        let cutoff = chrono::Utc::now() - chrono::Duration::hours(args.history_hours as i64);
+        let recent_jobs: Vec<_> = existing_jobs
+            .into_iter()
+            .filter(|job| {
+                // Keep jobs that are incomplete (still running) or started recently
+                job.metadata.incomplete
+                    || job.metadata.starttime > cutoff.timestamp() as f64
+            })
+            .collect();
+
+        if !recent_jobs.is_empty() {
+            let mut state_guard = state.lock().await;
+            merge_snakemake_jobs(&mut state_guard, recent_jobs);
+        }
+    }
 
     // Initialize polling service in the background
     let poll_config = PollingConfig {
@@ -135,8 +153,15 @@ async fn run_app(
                         }
                     }
                     WatcherEvent::MetadataDirectoryCreated => {
-                        // Metadata directory was just created - could scan it
-                        // For now, just wait for individual file events
+                        // Metadata directory was just created - scan for any existing files
+                        let state_guard = shared_state.lock().await;
+                        let working_dir = state_guard.working_dir.clone();
+                        drop(state_guard);
+
+                        if let Ok(jobs) = scan_metadata_dir(&working_dir) {
+                            let mut state_guard = shared_state.lock().await;
+                            merge_snakemake_jobs(&mut state_guard, jobs);
+                        }
                     }
                     WatcherEvent::Error(err) => {
                         eprintln!("File watcher error: {}", err);

@@ -1,0 +1,4 @@
+# Snakemake outputs
+results/
+.snakemake/
+dag.png
