@@ -1,4 +1,5 @@
 # Snakemake outputs
 results/
 .snakemake/
+logs/
 dag.png
