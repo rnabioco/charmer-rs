@@ -1,0 +1,12 @@
+[package]
+name = "charmer-monitor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+charmer-state.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+thiserror.workspace = true

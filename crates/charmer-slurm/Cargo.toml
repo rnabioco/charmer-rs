@@ -1,0 +1,11 @@
+[package]
+name = "charmer-slurm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+chrono.workspace = true

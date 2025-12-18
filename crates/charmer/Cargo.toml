@@ -1,0 +1,21 @@
+[package]
+name = "charmer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "charmer"
+path = "src/main.rs"
+
+[dependencies]
+charmer-cli.workspace = true
+charmer-core.workspace = true
+charmer-slurm.workspace = true
+charmer-state.workspace = true
+charmer-monitor.workspace = true
+clap = { workspace = true, features = ["derive"] }
+tokio.workspace = true
+miette.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true

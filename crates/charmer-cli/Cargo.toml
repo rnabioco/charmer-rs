@@ -1,0 +1,16 @@
+[package]
+name = "charmer-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+charmer-core.workspace = true
+charmer-slurm.workspace = true
+charmer-state.workspace = true
+charmer-monitor.workspace = true
+clap.workspace = true
+camino.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+miette.workspace = true

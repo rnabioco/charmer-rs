@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Jay Hesselberth"]
+
+[workspace.dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async
+tokio = { version = "1.35", features = ["full"] }
+
+# File watching
+notify = "6.1"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Paths
+camino = { version = "1.1", features = ["serde1"] }
+
+# Regex for parsing
+regex = "1.10"
+
+# Base64 for snakemake filenames
+base64 = "0.22"
+
+# Error handling
+thiserror = "1.0"
+miette = { version = "7.0", features = ["fancy"] }
+
+# Internal crates
+charmer-core = { path = "crates/charmer-core" }
+charmer-slurm = { path = "crates/charmer-slurm" }
+charmer-state = { path = "crates/charmer-state" }
+charmer-monitor = { path = "crates/charmer-monitor" }
+charmer-cli = { path = "crates/charmer-cli" }
