@@ -2,7 +2,7 @@
 
 use crate::components::{Footer, Header, JobDetail, JobList, LogViewer, LogViewerState};
 use crate::ui::Theme;
-use charmer_state::{JobStatus, PipelineState};
+use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -99,7 +99,7 @@ pub struct App {
 impl App {
     pub fn new(state: PipelineState) -> Self {
         let job_ids = state.jobs.keys().cloned().collect();
-        Self {
+        let mut app = Self {
             state,
             should_quit: false,
             selected_index: 0,
@@ -111,7 +111,10 @@ impl App {
             theme: Theme::dark(),
             last_tick: Instant::now(),
             job_ids,
-        }
+        };
+        // Open log viewer by default
+        app.open_log_viewer();
+        app
     }
 
     /// Update cached job list based on filter and sort.
@@ -148,7 +151,17 @@ impl App {
             }
         }
 
-        self.job_ids = jobs.into_iter().map(|(id, _)| id.clone()).collect();
+        // Build job IDs list with main pipeline job at top
+        self.job_ids = Vec::with_capacity(jobs.len() + 1);
+
+        // Always add main pipeline job at the top (when viewing all or running)
+        if matches!(self.filter_mode, FilterMode::All | FilterMode::Running) {
+            self.job_ids.push(MAIN_PIPELINE_JOB_ID.to_string());
+        }
+
+        // Add sorted job IDs
+        self.job_ids
+            .extend(jobs.into_iter().map(|(id, _)| id.clone()));
 
         // Clamp selection
         if !self.job_ids.is_empty() {
@@ -159,10 +172,28 @@ impl App {
     }
 
     /// Get the currently selected job.
+    /// Returns None if the main pipeline job is selected (it's synthetic).
     pub fn selected_job(&self) -> Option<&charmer_state::Job> {
+        self.job_ids.get(self.selected_index).and_then(|id| {
+            if id == MAIN_PIPELINE_JOB_ID {
+                None // Main pipeline job is synthetic
+            } else {
+                self.state.jobs.get(id)
+            }
+        })
+    }
+
+    /// Check if the main pipeline job is currently selected.
+    pub fn is_main_pipeline_selected(&self) -> bool {
         self.job_ids
             .get(self.selected_index)
-            .and_then(|id| self.state.jobs.get(id))
+            .map(|id| id == MAIN_PIPELINE_JOB_ID)
+            .unwrap_or(false)
+    }
+
+    /// Get the currently selected job ID.
+    pub fn selected_job_id(&self) -> Option<&str> {
+        self.job_ids.get(self.selected_index).map(|s| s.as_str())
     }
 
     /// Get filtered job IDs.
@@ -329,25 +360,37 @@ impl App {
 
     /// Open log viewer for the currently selected job.
     fn open_log_viewer(&mut self) {
-        if let Some(job) = self.selected_job().cloned() {
-            let log_path = self.find_log_path(&job);
+        let log_path = if self.is_main_pipeline_selected() {
+            // For main pipeline job, show the main snakemake log
+            self.find_latest_snakemake_log()
+                .unwrap_or_else(|| "(no snakemake log found)".to_string())
+        } else if let Some(job) = self.selected_job().cloned() {
+            self.find_log_path(&job)
+        } else {
+            return;
+        };
 
-            let mut state = LogViewerState::new(log_path, 1000);
-            state.follow_mode = true; // Enable follow mode by default for panel view
-            self.log_viewer_state = Some(state);
-            self.show_log_viewer = true;
-        }
+        let mut state = LogViewerState::new(log_path, 1000);
+        state.follow_mode = true; // Enable follow mode by default for panel view
+        self.log_viewer_state = Some(state);
+        self.show_log_viewer = true;
     }
 
     /// Update log viewer to show the currently selected job's logs.
     fn update_log_viewer_for_selected(&mut self) {
-        if let Some(job) = self.selected_job().cloned() {
-            let log_path = self.find_log_path(&job);
+        let log_path = if self.is_main_pipeline_selected() {
+            // For main pipeline job, show the main snakemake log
+            self.find_latest_snakemake_log()
+                .unwrap_or_else(|| "(no snakemake log found)".to_string())
+        } else if let Some(job) = self.selected_job().cloned() {
+            self.find_log_path(&job)
+        } else {
+            return;
+        };
 
-            let mut state = LogViewerState::new(log_path, 1000);
-            state.follow_mode = true;
-            self.log_viewer_state = Some(state);
-        }
+        let mut state = LogViewerState::new(log_path, 1000);
+        state.follow_mode = true;
+        self.log_viewer_state = Some(state);
     }
 
     /// Close the log viewer.
@@ -485,7 +528,13 @@ impl App {
             &self.job_ids,
             Some(self.selected_index),
         );
-        JobDetail::render(frame, main_chunks[1], self.selected_job());
+
+        // Render job detail or pipeline summary
+        if self.is_main_pipeline_selected() {
+            JobDetail::render_pipeline(frame, main_chunks[1], &self.state);
+        } else {
+            JobDetail::render(frame, main_chunks[1], self.selected_job());
+        }
 
         // Log panel at bottom (if open)
         if self.show_log_viewer {

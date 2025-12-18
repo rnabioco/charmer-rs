@@ -1,6 +1,6 @@
 //! Job detail panel with rich formatting.
 
-use charmer_state::{FailureMode, Job, JobStatus};
+use charmer_state::{FailureMode, Job, JobStatus, PipelineState};
 use chrono::Utc;
 use ratatui::{
     layout::Rect,
@@ -27,6 +27,169 @@ impl JobDetail {
 
         frame.render_widget(paragraph, area);
     }
+
+    /// Render pipeline summary when main snakemake job is selected.
+    pub fn render_pipeline(frame: &mut Frame, area: Rect, state: &PipelineState) {
+        let content = build_pipeline_lines(state);
+
+        let paragraph = Paragraph::new(content)
+            .block(Block::default().borders(Borders::ALL).title(" Pipeline "));
+
+        frame.render_widget(paragraph, area);
+    }
+}
+
+/// Build detail lines for pipeline summary.
+fn build_pipeline_lines(state: &PipelineState) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let counts = state.job_counts();
+
+    // Title
+    lines.push(Line::from(vec![Span::styled(
+        "Snakemake Pipeline",
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )]));
+
+    lines.push(Line::from(""));
+
+    // Status
+    let (status_text, status_color) = if state.pipeline_finished {
+        ("Completed", Color::Green)
+    } else if !state.pipeline_errors.is_empty() {
+        ("Failed", Color::Red)
+    } else {
+        ("Running", Color::Yellow)
+    };
+
+    lines.push(Line::from(vec![
+        Span::styled("Status: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            status_text,
+            Style::default()
+                .fg(status_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    // Host
+    if let Some(ref host) = state.host {
+        lines.push(Line::from(vec![
+            Span::styled("Host: ", Style::default().fg(Color::Gray)),
+            Span::styled(host.clone(), Style::default().fg(Color::White)),
+        ]));
+    }
+
+    // Cores
+    if let Some(cores) = state.cores {
+        lines.push(Line::from(vec![
+            Span::styled("Cores: ", Style::default().fg(Color::Gray)),
+            Span::styled(cores.to_string(), Style::default().fg(Color::White)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+
+    // Progress section
+    lines.push(Line::from(Span::styled(
+        "Progress",
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    )));
+
+    // Total jobs
+    if let Some(total) = state.total_jobs {
+        lines.push(Line::from(vec![
+            Span::styled("  Total: ", Style::default().fg(Color::Gray)),
+            Span::styled(total.to_string(), Style::default().fg(Color::White)),
+            Span::styled(" jobs", Style::default().fg(Color::Gray)),
+        ]));
+
+        // Progress percentage
+        let progress = counts.completed as f64 / total as f64 * 100.0;
+        lines.push(Line::from(vec![
+            Span::styled("  Progress: ", Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!("{:.0}%", progress),
+                Style::default().fg(Color::Green),
+            ),
+            Span::styled(
+                format!(" ({}/{})", counts.completed, total),
+                Style::default().fg(Color::Gray),
+            ),
+        ]));
+    }
+
+    // Job breakdown
+    lines.push(Line::from(vec![
+        Span::styled("  Running: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            counts.running.to_string(),
+            Style::default().fg(Color::Yellow),
+        ),
+    ]));
+
+    lines.push(Line::from(vec![
+        Span::styled("  Completed: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            counts.completed.to_string(),
+            Style::default().fg(Color::Green),
+        ),
+    ]));
+
+    lines.push(Line::from(vec![
+        Span::styled("  Failed: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            counts.failed.to_string(),
+            Style::default().fg(if counts.failed > 0 {
+                Color::Red
+            } else {
+                Color::Gray
+            }),
+        ),
+    ]));
+
+    lines.push(Line::from(vec![
+        Span::styled("  Pending: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            (counts.pending + counts.queued).to_string(),
+            Style::default().fg(Color::Blue),
+        ),
+    ]));
+
+    // Errors section
+    if !state.pipeline_errors.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Errors",
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )));
+
+        for error in state.pipeline_errors.iter().take(3) {
+            let msg = if error.len() > 45 {
+                format!("{}...", &error[..42])
+            } else {
+                error.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(msg, Style::default().fg(Color::Red)),
+            ]));
+        }
+
+        if state.pipeline_errors.len() > 3 {
+            lines.push(Line::from(Span::styled(
+                format!("  (+{} more)", state.pipeline_errors.len() - 3),
+                Style::default().fg(Color::Gray),
+            )));
+        }
+    }
+
+    lines
 }
 
 fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
@@ -34,7 +197,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
 
     // Rule name with color
     lines.push(Line::from(vec![
-        Span::styled("Rule: ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Rule: ", Style::default().fg(Color::Gray)),
         Span::styled(
             job.rule.clone(),
             Style::default()
@@ -46,7 +209,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // Wildcards / Sample info
     if let Some(ref wildcards) = job.wildcards {
         lines.push(Line::from(vec![
-            Span::styled("Wildcards: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Wildcards: ", Style::default().fg(Color::Gray)),
             Span::styled(wildcards.clone(), Style::default().fg(Color::Yellow)),
         ]));
     } else {
@@ -55,7 +218,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
             extract_sample_from_path(&job.outputs.first().cloned().unwrap_or_default())
         {
             lines.push(Line::from(vec![
-                Span::styled("Sample: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Sample: ", Style::default().fg(Color::Gray)),
                 Span::styled(sample, Style::default().fg(Color::Yellow)),
             ]));
         }
@@ -74,7 +237,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         JobStatus::Unknown => ("Unknown", Color::DarkGray),
     };
     lines.push(Line::from(vec![
-        Span::styled("Status: ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Status: ", Style::default().fg(Color::Gray)),
         Span::styled(
             format!("{} {}", job.status.symbol(), status_text),
             Style::default()
@@ -86,7 +249,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // SLURM/LSF Job ID
     if let Some(ref slurm_id) = job.slurm_job_id {
         lines.push(Line::from(vec![
-            Span::styled("Job ID: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Job ID: ", Style::default().fg(Color::Gray)),
             Span::styled(slurm_id.clone(), Style::default().fg(Color::Cyan)),
         ]));
     }
@@ -104,7 +267,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // Partition/Queue
     if let Some(ref partition) = job.resources.partition {
         lines.push(Line::from(vec![
-            Span::styled("  Queue: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Queue: ", Style::default().fg(Color::Gray)),
             Span::styled(partition.clone(), Style::default().fg(Color::Magenta)),
         ]));
     }
@@ -112,7 +275,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // Node
     if let Some(ref node) = job.resources.node {
         lines.push(Line::from(vec![
-            Span::styled("  Node: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Node: ", Style::default().fg(Color::Gray)),
             Span::styled(node.clone(), Style::default().fg(Color::Cyan)),
         ]));
     }
@@ -120,7 +283,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // CPUs
     if let Some(cpus) = job.resources.cpus {
         lines.push(Line::from(vec![
-            Span::styled("  CPUs: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  CPUs: ", Style::default().fg(Color::Gray)),
             Span::styled(cpus.to_string(), Style::default().fg(Color::Green)),
         ]));
     }
@@ -133,7 +296,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
             format!("{} MB", mem)
         };
         lines.push(Line::from(vec![
-            Span::styled("  Memory: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Memory: ", Style::default().fg(Color::Gray)),
             Span::styled(mem_str, Style::default().fg(Color::Green)),
         ]));
     }
@@ -141,12 +304,91 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // Time limit
     if let Some(ref time_limit) = job.resources.time_limit {
         lines.push(Line::from(vec![
-            Span::styled("  Time Limit: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Time Limit: ", Style::default().fg(Color::Gray)),
             Span::styled(
                 format_duration(time_limit),
                 Style::default().fg(Color::Yellow),
             ),
         ]));
+    }
+
+    // Usage section (actual consumption for finished jobs)
+    if let Some(ref usage) = job.usage {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Actual Usage",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        )));
+
+        // Max RSS (actual memory used)
+        if let Some(max_rss) = usage.max_rss_mb {
+            let mem_str = if max_rss >= 1024 {
+                format!("{:.1} GB", max_rss as f64 / 1024.0)
+            } else {
+                format!("{} MB", max_rss)
+            };
+            // Compare with requested
+            let efficiency = job.resources.memory_mb.map(|req| {
+                if req > 0 {
+                    (max_rss as f64 / req as f64 * 100.0) as u32
+                } else {
+                    0
+                }
+            });
+            let eff_color = match efficiency {
+                Some(e) if e > 90 => Color::Red,    // Near limit
+                Some(e) if e > 70 => Color::Yellow, // Good utilization
+                Some(e) if e > 30 => Color::Green,  // Moderate
+                _ => Color::Cyan,                   // Low utilization
+            };
+            let mut spans = vec![
+                Span::styled("  Memory: ", Style::default().fg(Color::Gray)),
+                Span::styled(mem_str, Style::default().fg(eff_color)),
+            ];
+            if let Some(eff) = efficiency {
+                spans.push(Span::styled(
+                    format!(" ({}%)", eff),
+                    Style::default().fg(Color::Gray),
+                ));
+            }
+            lines.push(Line::from(spans));
+        }
+
+        // Elapsed time
+        if let Some(elapsed) = usage.elapsed_seconds {
+            let time_str = format_seconds(elapsed);
+            // Compare with time limit
+            let efficiency = job.resources.time_limit.map(|limit| {
+                let limit_secs = limit.as_secs();
+                if limit_secs > 0 {
+                    (elapsed as f64 / limit_secs as f64 * 100.0) as u32
+                } else {
+                    0
+                }
+            });
+            let mut spans = vec![
+                Span::styled("  Runtime: ", Style::default().fg(Color::Gray)),
+                Span::styled(time_str, Style::default().fg(Color::Green)),
+            ];
+            if let Some(eff) = efficiency {
+                spans.push(Span::styled(
+                    format!(" ({}%)", eff),
+                    Style::default().fg(Color::Gray),
+                ));
+            }
+            lines.push(Line::from(spans));
+        }
+
+        // CPU time
+        if let Some(cpu_time) = usage.cpu_time_seconds {
+            let time_str = format_seconds(cpu_time);
+            lines.push(Line::from(vec![
+                Span::styled("  CPU Time: ", Style::default().fg(Color::Gray)),
+                Span::styled(time_str, Style::default().fg(Color::Cyan)),
+            ]));
+        }
     }
 
     lines.push(Line::from(""));
@@ -163,7 +405,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     if let (Some(queued), Some(started)) = (job.timing.queued_at, job.timing.started_at) {
         let wait = started - queued;
         lines.push(Line::from(vec![
-            Span::styled("  Wait: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Wait: ", Style::default().fg(Color::Gray)),
             Span::styled(
                 format_chrono_duration(&wait),
                 Style::default().fg(Color::Blue),
@@ -184,7 +426,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
             Color::Green
         };
         lines.push(Line::from(vec![
-            Span::styled("  Runtime: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Runtime: ", Style::default().fg(Color::Gray)),
             Span::styled(
                 format_chrono_duration(&runtime),
                 Style::default().fg(runtime_color),
@@ -195,10 +437,10 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
     // Started at
     if let Some(started) = job.timing.started_at {
         lines.push(Line::from(vec![
-            Span::styled("  Started: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Started: ", Style::default().fg(Color::Gray)),
             Span::styled(
                 started.format("%H:%M:%S").to_string(),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::White),
             ),
         ]));
     }
@@ -222,10 +464,10 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                 FailureMode::ExitCode => ("✗", "Exit Code Error", Color::Red),
                 FailureMode::Cancelled => ("⊘", "Cancelled", Color::Magenta),
                 FailureMode::NodeFailure => ("⚡", "Node Failure", Color::LightRed),
-                FailureMode::Unknown => ("?", "Unknown", Color::DarkGray),
+                FailureMode::Unknown => ("?", "Unknown", Color::Gray),
             };
             lines.push(Line::from(vec![
-                Span::styled("  Failure: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("  Failure: ", Style::default().fg(Color::Gray)),
                 Span::styled(
                     format!("{} {}", mode_icon, mode_text),
                     Style::default().fg(mode_color).add_modifier(Modifier::BOLD),
@@ -238,15 +480,15 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                     (analysis.memory_used_mb, analysis.memory_limit_mb)
                 {
                     lines.push(Line::from(vec![
-                        Span::styled("  Memory: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("  Memory: ", Style::default().fg(Color::Gray)),
                         Span::styled(
                             format!("{:.1} GB", used as f64 / 1024.0),
                             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" / ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(" / ", Style::default().fg(Color::Gray)),
                         Span::styled(
                             format!("{:.1} GB limit", limit as f64 / 1024.0),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(Color::Gray),
                         ),
                     ]));
                 }
@@ -258,17 +500,17 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                     (analysis.runtime_seconds, analysis.time_limit_seconds)
                 {
                     lines.push(Line::from(vec![
-                        Span::styled("  Time: ", Style::default().fg(Color::DarkGray)),
+                        Span::styled("  Time: ", Style::default().fg(Color::Gray)),
                         Span::styled(
                             format_seconds(runtime),
                             Style::default()
                                 .fg(Color::Yellow)
                                 .add_modifier(Modifier::BOLD),
                         ),
-                        Span::styled(" / ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(" / ", Style::default().fg(Color::Gray)),
                         Span::styled(
                             format!("{} limit", format_seconds(limit)),
-                            Style::default().fg(Color::DarkGray),
+                            Style::default().fg(Color::Gray),
                         ),
                     ]));
                 }
@@ -313,7 +555,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
         } else {
             // No analysis available - show basic error info
             lines.push(Line::from(vec![
-                Span::styled("  Exit Code: ", Style::default().fg(Color::DarkGray)),
+                Span::styled("  Exit Code: ", Style::default().fg(Color::Gray)),
                 Span::styled(
                     error.exit_code.to_string(),
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
@@ -327,7 +569,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                     error.message.clone()
                 };
                 lines.push(Line::from(vec![
-                    Span::styled("  Message: ", Style::default().fg(Color::DarkGray)),
+                    Span::styled("  Message: ", Style::default().fg(Color::Gray)),
                     Span::styled(msg, Style::default().fg(Color::Red)),
                 ]));
             }
@@ -351,13 +593,13 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
             };
             lines.push(Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(display, Style::default().fg(Color::DarkGray)),
+                Span::styled(display, Style::default().fg(Color::Gray)),
             ]));
         }
         if job.outputs.len() > 3 {
             lines.push(Line::from(Span::styled(
                 format!("  (+{} more)", job.outputs.len() - 3),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             )));
         }
     }
@@ -388,7 +630,7 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
             };
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(cmd_display, Style::default().fg(Color::DarkGray)),
+            Span::styled(cmd_display, Style::default().fg(Color::Gray)),
         ]));
     }
 
