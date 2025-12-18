@@ -82,6 +82,7 @@ pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: 
                     has_lsf_bjobs: !from_bhist,
                     has_lsf_bhist: from_bhist,
                 },
+                is_target: false,
             };
 
             let rule_name = job.rule.clone();

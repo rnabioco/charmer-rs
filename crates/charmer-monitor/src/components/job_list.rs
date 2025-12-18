@@ -13,6 +13,7 @@ use ratatui::{
 const MIN_ROW_WIDTH: u16 = 4;
 const MIN_STATUS_WIDTH: u16 = 2;
 const MIN_RULE_WIDTH: u16 = 12;
+const MAX_RULE_WIDTH: u16 = 24; // Cap rule column to prevent excessive width
 const MIN_SAMPLE_WIDTH: u16 = 10;
 const MIN_SLURM_WIDTH: u16 = 10;
 
@@ -140,8 +141,8 @@ fn build_job_item(
         0
     };
 
-    // Rule gets remaining space
-    let rule_width = remaining.max(MIN_RULE_WIDTH) as usize;
+    // Rule gets remaining space, capped at MAX_RULE_WIDTH
+    let rule_width = remaining.clamp(MIN_RULE_WIDTH, MAX_RULE_WIDTH) as usize;
 
     // Build spans
     let mut spans = Vec::new();
@@ -157,13 +158,19 @@ fn build_job_item(
     spans.push(Span::styled(format!("{:3} ", index), row_style));
 
     // Status symbol (highlighted when selected)
+    // Use 🎯 for target rules (like "all"), otherwise use status symbol
+    let status_symbol = if job.is_target {
+        "🎯"
+    } else {
+        job.status.symbol()
+    };
     let status_display_style = if is_selected {
         status_style.add_modifier(Modifier::BOLD)
     } else {
         status_style
     };
     spans.push(Span::styled(
-        format!("{} ", job.status.symbol()),
+        format!("{} ", status_symbol),
         status_display_style,
     ));
 
@@ -402,7 +409,7 @@ fn render_column_headers(frame: &mut Frame, area: Rect, opts: &DisplayOptions) {
         0
     };
 
-    let rule_width = remaining.max(MIN_RULE_WIDTH) as usize;
+    let rule_width = remaining.clamp(MIN_RULE_WIDTH, MAX_RULE_WIDTH) as usize;
 
     // Build header spans
     let mut spans = Vec::new();

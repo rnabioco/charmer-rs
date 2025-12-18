@@ -125,6 +125,7 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
                     has_lsf_bjobs: false,
                     has_lsf_bhist: false,
                 },
+                is_target: false,
             };
             state.jobs.insert(job_id.clone(), job);
 

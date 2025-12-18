@@ -82,6 +82,7 @@ pub fn merge_slurm_jobs(state: &mut PipelineState, jobs: Vec<SlurmJob>, from_sac
                     has_lsf_bjobs: false,
                     has_lsf_bhist: false,
                 },
+                is_target: false,
             };
 
             let rule_name = job.rule.clone();
