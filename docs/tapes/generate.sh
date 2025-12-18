@@ -6,6 +6,9 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 cd "$ROOT_DIR"
 
+# Build release binary
+cargo build --release
+
 # Clean and start the test pipeline
 pixi run clean-test
 cd tests/pipelines/simple

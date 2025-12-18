@@ -17,7 +17,7 @@ Enter
 Sleep 1s
 
 # Show help
-Type "charmer --help"
+Type "../../target/release/charmer --help"
 Enter
 Sleep 3s
 
@@ -28,7 +28,7 @@ Enter
 Show
 
 # Start charmer with test data
-Type "charmer ../../tests/pipelines/simple"
+Type "../../target/release/charmer ../../tests/pipelines/simple"
 Enter
 Sleep 2s
 

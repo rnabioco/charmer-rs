@@ -22,7 +22,7 @@ Type "# Start monitoring"
 Enter
 Sleep 500ms
 
-Type "charmer"
+Type "../../../../target/release/charmer"
 Enter
 Sleep 3s
 
