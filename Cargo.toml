@@ -43,6 +43,9 @@ base64 = "0.22"
 thiserror = "2.0"
 miette = { version = "7.4", features = ["fancy"] }
 
+# Clipboard
+arboard = "3"
+
 # Internal crates
 charmer-core = { path = "crates/charmer-core" }
 charmer-parsers = { path = "crates/charmer-parsers" }

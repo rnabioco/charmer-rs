@@ -106,8 +106,10 @@ pub struct App {
     pub log_viewer_state: Option<LogViewerState>,
     pub theme: Theme,
     pub last_tick: Instant,
-    job_ids: Vec<String>,    // Cached sorted/filtered job IDs
-    rule_names: Vec<String>, // Cached rule names for rule view
+    job_ids: Vec<String>,                      // Cached sorted/filtered job IDs
+    rule_names: Vec<String>,                   // Cached rule names for rule view
+    status_message: Option<(String, Instant)>, // Temporary status message with timestamp
+    command_expanded: bool,                    // Whether command section is expanded in details
 }
 
 impl App {
@@ -128,6 +130,8 @@ impl App {
             last_tick: Instant::now(),
             job_ids,
             rule_names,
+            status_message: None,
+            command_expanded: false,
         };
         // Open log viewer by default
         app.open_log_viewer();
@@ -146,24 +150,45 @@ impl App {
         // Sort jobs
         match self.sort_mode {
             SortMode::Status => {
-                jobs.sort_by_key(|(_, job)| match job.status {
-                    JobStatus::Running => 0,
-                    JobStatus::Failed => 1,
-                    JobStatus::Queued => 2,
-                    JobStatus::Pending => 3,
-                    JobStatus::Completed => 4,
-                    JobStatus::Cancelled => 5,
-                    JobStatus::Unknown => 6,
+                jobs.sort_by_key(|(_, job)| {
+                    // Target jobs (like "all") always go to the bottom, regardless of status
+                    // They represent pipeline completion and should be last
+                    if job.is_target {
+                        return 10;
+                    }
+                    match job.status {
+                        JobStatus::Running => 0,
+                        JobStatus::Failed => 1,
+                        JobStatus::Queued => 2,
+                        JobStatus::Pending => 3,
+                        JobStatus::Completed => 4,
+                        JobStatus::Cancelled => 5,
+                        JobStatus::Unknown => 6,
+                    }
                 });
             }
             SortMode::Rule => {
-                jobs.sort_by(|(_, a), (_, b)| a.rule.cmp(&b.rule));
+                jobs.sort_by(|(_, a), (_, b)| {
+                    // Target jobs go to the bottom in rule sort too
+                    match (a.is_target, b.is_target) {
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (false, true) => std::cmp::Ordering::Less,
+                        _ => a.rule.cmp(&b.rule),
+                    }
+                });
             }
             SortMode::Time => {
                 jobs.sort_by(|(_, a), (_, b)| {
-                    let a_time = a.timing.started_at.or(a.timing.queued_at);
-                    let b_time = b.timing.started_at.or(b.timing.queued_at);
-                    b_time.cmp(&a_time) // Most recent first
+                    // Target jobs go to the bottom in time sort too
+                    match (a.is_target, b.is_target) {
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (false, true) => std::cmp::Ordering::Less,
+                        _ => {
+                            let a_time = a.timing.started_at.or(a.timing.queued_at);
+                            let b_time = b.timing.started_at.or(b.timing.queued_at);
+                            b_time.cmp(&a_time) // Most recent first
+                        }
+                    }
                 });
             }
         }
@@ -234,6 +259,7 @@ impl App {
         let len = self.list_len();
         if len > 0 {
             self.selected_index = (self.selected_index + 1) % len;
+            self.command_expanded = false; // Reset expansion when navigating
         }
     }
 
@@ -241,6 +267,7 @@ impl App {
         let len = self.list_len();
         if len > 0 {
             self.selected_index = self.selected_index.checked_sub(1).unwrap_or(len - 1);
+            self.command_expanded = false; // Reset expansion when navigating
         }
     }
 
@@ -484,6 +511,37 @@ impl App {
         }
     }
 
+    /// Copy the selected job's shell command to clipboard.
+    fn copy_command(&mut self) {
+        let job = self.selected_job();
+        if let Some(job) = job {
+            let cmd = job.shellcmd.trim();
+            if cmd.is_empty() {
+                self.status_message = Some(("No command to copy".to_string(), Instant::now()));
+                return;
+            }
+
+            match arboard::Clipboard::new() {
+                Ok(mut clipboard) => match clipboard.set_text(cmd) {
+                    Ok(()) => {
+                        self.status_message =
+                            Some(("Command copied to clipboard".to_string(), Instant::now()));
+                    }
+                    Err(_) => {
+                        self.status_message =
+                            Some(("Failed to copy to clipboard".to_string(), Instant::now()));
+                    }
+                },
+                Err(_) => {
+                    self.status_message =
+                        Some(("Clipboard not available".to_string(), Instant::now()));
+                }
+            }
+        } else {
+            self.status_message = Some(("No job selected".to_string(), Instant::now()));
+        }
+    }
+
     /// Handle a key event.
     pub fn handle_key(&mut self, key: KeyEvent) {
         // If help is showing, any key closes it
@@ -522,6 +580,8 @@ impl App {
                 }
             }
             KeyCode::Char('?') => self.toggle_help(),
+            KeyCode::Char('c') => self.copy_command(),
+            KeyCode::Char('e') => self.command_expanded = !self.command_expanded,
             _ => {}
         }
     }
@@ -592,7 +652,12 @@ impl App {
                 if self.is_main_pipeline_selected() {
                     JobDetail::render_pipeline(frame, main_chunks[1], &self.state);
                 } else {
-                    JobDetail::render(frame, main_chunks[1], self.selected_job());
+                    JobDetail::render(
+                        frame,
+                        main_chunks[1],
+                        self.selected_job(),
+                        self.command_expanded,
+                    );
                 }
             }
             ViewMode::Rules => {
@@ -772,13 +837,13 @@ impl App {
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
-        use ratatui::style::{Color, Style};
+        use ratatui::style::{Color, Modifier, Style};
         use ratatui::text::{Line, Span};
         use ratatui::widgets::Paragraph;
 
         let counts = self.state.job_counts();
 
-        let spans = vec![
+        let mut spans = vec![
             Span::styled(
                 format!(" {} Pending ", counts.pending + counts.queued),
                 Style::default().fg(Color::White),
@@ -803,6 +868,19 @@ impl App {
             Span::raw(" │ Sort: "),
             Span::styled(self.sort_mode.label(), Style::default().fg(Color::Cyan)),
         ];
+
+        // Show status message if recent (within 3 seconds)
+        if let Some((ref msg, timestamp)) = self.status_message {
+            if timestamp.elapsed() < Duration::from_secs(3) {
+                spans.push(Span::raw(" │ "));
+                spans.push(Span::styled(
+                    msg.clone(),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+        }
 
         let paragraph = Paragraph::new(Line::from(spans));
         frame.render_widget(paragraph, area);
@@ -834,6 +912,8 @@ impl App {
   s          Cycle sort (Status/Rule/Time)
   l / Enter  Toggle log panel
   F          Toggle follow mode (when logs open)
+  c          Copy command to clipboard
+  e          Expand/collapse command
   ?          Toggle this help
   q / Ctrl+C Quit
 

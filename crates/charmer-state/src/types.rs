@@ -593,13 +593,12 @@ impl PipelineState {
             self.pipeline_errors = info.errors.iter().map(|s| parse_error_string(s)).collect();
         }
 
-        // Create synthetic jobs for target rules (rules with no outputs, like "all")
+        // Create synthetic jobs for target rules (rules without output files)
         // These rules appear in jobs_by_rule from the log but won't have metadata files
-        for (rule, count) in &info.jobs_by_rule {
-            // Target rules typically have count=1 and are named "all" or similar
-            // They won't have jobs in the job list since no metadata is created
-            if *count == 1 && !self.jobs_by_rule.contains_key(rule) {
-                // This rule has no corresponding jobs - likely a target rule
+        // since they have no output files (e.g., "all" rule that just aggregates targets).
+        // We detect these by parsing rule blocks in the log and checking for output: lines.
+        for rule in &info.target_rules {
+            if !self.jobs_by_rule.contains_key(rule) {
                 let job_id = format!("__target_{}__", rule);
                 let status = if info.finished && self.pipeline_errors.is_empty() {
                     JobStatus::Completed
@@ -630,6 +629,26 @@ impl PipelineState {
                 };
                 self.jobs.insert(job_id.clone(), job);
                 self.jobs_by_rule.insert(rule.clone(), vec![job_id]);
+            }
+        }
+
+        // Update status of existing target jobs based on pipeline state
+        for rule in &info.target_rules {
+            let job_id = format!("__target_{}__", rule);
+            if let Some(job) = self.jobs.get_mut(&job_id) {
+                if job.is_target {
+                    job.status = if info.finished && self.pipeline_errors.is_empty() {
+                        JobStatus::Completed
+                    } else if info.finished {
+                        JobStatus::Failed
+                    } else {
+                        JobStatus::Pending
+                    };
+                    // Update timing when pipeline finishes
+                    if info.finished && job.timing.completed_at.is_none() {
+                        job.timing.completed_at = Some(chrono::Utc::now());
+                    }
+                }
             }
         }
     }

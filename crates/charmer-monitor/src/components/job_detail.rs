@@ -13,9 +13,9 @@ use ratatui::{
 pub struct JobDetail;
 
 impl JobDetail {
-    pub fn render(frame: &mut Frame, area: Rect, job: Option<&Job>) {
+    pub fn render(frame: &mut Frame, area: Rect, job: Option<&Job>, command_expanded: bool) {
         let content = match job {
-            Some(job) => build_detail_lines(job),
+            Some(job) => build_detail_lines(job, command_expanded),
             None => vec![Line::from(Span::styled(
                 "No job selected",
                 Style::default().fg(Color::DarkGray),
@@ -223,7 +223,7 @@ fn build_pipeline_lines(state: &PipelineState) -> Vec<Line<'static>> {
     lines
 }
 
-fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
+fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Rule name with color
@@ -674,33 +674,48 @@ fn build_detail_lines(job: &Job) -> Vec<Line<'static>> {
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )));
 
-        // Show first few non-empty lines of the command
-        let cmd_lines: Vec<&str> = trimmed_cmd
+        let all_cmd_lines: Vec<&str> = trimmed_cmd
             .lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty())
-            .take(3)
             .collect();
 
-        for cmd_line in cmd_lines {
-            let display = if cmd_line.len() > 50 {
-                format!("{}…", &cmd_line[..49])
-            } else {
-                cmd_line.to_string()
-            };
-            lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(display, Style::default().fg(Color::Gray)),
-            ]));
-        }
+        let total_lines = all_cmd_lines.len();
 
-        // Indicate if there are more lines
-        let total_lines = trimmed_cmd.lines().filter(|l| !l.trim().is_empty()).count();
-        if total_lines > 3 {
+        if command_expanded {
+            // Show all lines, no truncation
+            for cmd_line in &all_cmd_lines {
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(cmd_line.to_string(), Style::default().fg(Color::Gray)),
+                ]));
+            }
+            // Show hint to collapse/copy
             lines.push(Line::from(Span::styled(
-                format!("  (+{} more lines)", total_lines - 3),
+                "  ('e' to collapse, 'c' to copy)",
                 Style::default().fg(Color::DarkGray),
             )));
+        } else {
+            // Show first 3 lines with truncation
+            for cmd_line in all_cmd_lines.iter().take(3) {
+                let display = if cmd_line.len() > 50 {
+                    format!("{}…", &cmd_line[..49])
+                } else {
+                    cmd_line.to_string()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(display, Style::default().fg(Color::Gray)),
+                ]));
+            }
+
+            // Indicate if there are more lines
+            if total_lines > 3 {
+                lines.push(Line::from(Span::styled(
+                    format!("  (+{} more lines, press 'e' to expand)", total_lines - 3),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
         }
     }
 
