@@ -386,11 +386,11 @@ fn build_job_item(
         ));
     }
 
-    // Add dependency indicator on the right
+    // Add dependency indicator on the right - vertical line with markers
     let dep_indicator = match dep_relation {
-        DepRelation::Selected => Span::styled(" ● ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        DepRelation::Upstream => Span::styled(" ○─", Style::default().fg(Color::Cyan)),
-        DepRelation::Downstream => Span::styled(" ○─", Style::default().fg(Color::Magenta)),
+        DepRelation::Selected => Span::styled("│●│", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        DepRelation::Upstream => Span::styled("│○│", Style::default().fg(Color::Cyan)),
+        DepRelation::Downstream => Span::styled("│○│", Style::default().fg(Color::Magenta)),
         DepRelation::None => Span::raw("   "),
     };
     spans.push(dep_indicator);
