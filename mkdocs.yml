@@ -52,18 +52,15 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Start: getting-started/quickstart.md
-  - User Guide:
-    - Configuration: guide/configuration.md
-    - SLURM Integration: guide/slurm.md
-    - LSF Integration: guide/lsf.md
-    - Keyboard Shortcuts: guide/shortcuts.md
-  - Development:
-    - Architecture: dev/architecture.md
-    - Contributing: dev/contributing.md
-  - API Reference: api/index.md
+  - Installation: getting-started/installation.md
+  - Quick Start: getting-started/quickstart.md
+  - Configuration: guide/configuration.md
+  - SLURM: guide/slurm.md
+  - LSF: guide/lsf.md
+  - Shortcuts: guide/shortcuts.md
+  - Architecture: dev/architecture.md
+  - Contributing: dev/contributing.md
+  - API: api/index.md
 
 extra:
   social:
