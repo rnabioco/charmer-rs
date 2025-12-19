@@ -13,11 +13,12 @@ pub struct ViewTabs;
 impl ViewTabs {
     /// Render the view tabs.
     pub fn render(frame: &mut Frame, area: Rect, view_mode: ViewMode) {
-        let titles = vec!["Jobs", "Rules"];
+        let titles = vec!["Jobs", "Rules", "DAG"];
 
         let selected = match view_mode {
             ViewMode::Jobs => 0,
             ViewMode::Rules => 1,
+            ViewMode::Dag => 2,
         };
 
         let tabs = Tabs::new(titles)
