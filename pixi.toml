@@ -10,7 +10,10 @@ platforms = ["osx-arm64", "osx-64", "linux-64"]
 test-pipeline = "cd tests/pipelines/simple && snakemake --cores 2 --snakefile Snakefile"
 
 # Clean test pipeline outputs (including .snakemake metadata)
-clean-test = "cd tests/pipelines/simple && rm -rf results .snakemake"
+clean-test = "cd tests/pipelines/simple && rm -rf results logs .snakemake"
+
+# Clean demo pipeline outputs
+clean-demo = "cd tests/pipelines/demo && rm -rf results logs .snakemake"
 
 # Dry run to see what would be executed
 dry-run = "cd tests/pipelines/simple && snakemake --cores 2 --dry-run"

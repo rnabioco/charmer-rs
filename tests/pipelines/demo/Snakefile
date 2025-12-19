@@ -1,0 +1,154 @@
+# Demo pipeline optimized for charmer VHS recordings
+# Designed to show: job accumulation, dependency chains, multiple rules
+
+SAMPLES = [f"sample{i}" for i in range(1, 13)]  # 12 samples
+REGIONS = ["region_A", "region_B", "region_C"]
+
+rule all:
+    input:
+        "results/final_summary.txt"
+
+rule download:
+    """Download raw data - fast, runs first for all samples."""
+    output:
+        "results/raw/{sample}.fastq"
+    params:
+        delay = lambda wc: 2 + (hash(wc.sample) % 3)  # 2-4 seconds, varies by sample
+    log:
+        "logs/download/{sample}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Downloading {wildcards.sample}..."
+        sleep {params.delay}
+        echo "Downloaded" > {output}
+        """
+
+rule quality_check:
+    """QC step - depends on download."""
+    input:
+        "results/raw/{sample}.fastq"
+    output:
+        "results/qc/{sample}_qc.txt"
+    params:
+        delay = lambda wc: 3 + (hash(wc.sample) % 4)  # 3-6 seconds
+    log:
+        "logs/qc/{sample}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Running QC on {wildcards.sample}..."
+        sleep {params.delay}
+        echo "QC passed" > {output}
+        """
+
+rule align:
+    """Alignment - depends on QC, longer running."""
+    input:
+        fastq = "results/raw/{sample}.fastq",
+        qc = "results/qc/{sample}_qc.txt"
+    output:
+        "results/aligned/{sample}.bam"
+    params:
+        delay = lambda wc: 5 + (hash(wc.sample) % 5)  # 5-9 seconds
+    log:
+        "logs/align/{sample}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Aligning {wildcards.sample}..."
+        sleep {params.delay}
+        echo "Aligned" > {output}
+        """
+
+rule call_peaks:
+    """Peak calling per region - creates fan-out from alignment."""
+    input:
+        "results/aligned/{sample}.bam"
+    output:
+        "results/peaks/{sample}_{region}.bed"
+    params:
+        delay = lambda wc: 4 + (hash(wc.sample + wc.region) % 4)  # 4-7 seconds
+    log:
+        "logs/peaks/{sample}_{region}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Calling peaks for {wildcards.sample} in {wildcards.region}..."
+        sleep {params.delay}
+        echo "Peaks found" > {output}
+        """
+
+rule merge_peaks:
+    """Merge peaks per sample - depends on all regions."""
+    input:
+        expand("results/peaks/{{sample}}_{region}.bed", region=REGIONS)
+    output:
+        "results/merged/{sample}_peaks.bed"
+    params:
+        delay = 3
+    log:
+        "logs/merge/{sample}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Merging peaks for {wildcards.sample}..."
+        sleep {params.delay}
+        cat {input} > {output}
+        """
+
+rule annotate:
+    """Annotate merged peaks."""
+    input:
+        "results/merged/{sample}_peaks.bed"
+    output:
+        "results/annotated/{sample}_annotated.txt"
+    params:
+        delay = 4
+    log:
+        "logs/annotate/{sample}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Annotating {wildcards.sample}..."
+        sleep {params.delay}
+        echo "Annotated" > {output}
+        """
+
+rule sample_report:
+    """Per-sample report - end of chain per sample."""
+    input:
+        annotated = "results/annotated/{sample}_annotated.txt",
+        bam = "results/aligned/{sample}.bam"
+    output:
+        "results/reports/{sample}_report.txt"
+    params:
+        delay = 2
+    log:
+        "logs/report/{sample}.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Generating report for {wildcards.sample}..."
+        sleep {params.delay}
+        echo "Report for {wildcards.sample}" > {output}
+        """
+
+rule final_summary:
+    """Final summary - depends on all sample reports."""
+    input:
+        expand("results/reports/{sample}_report.txt", sample=SAMPLES)
+    output:
+        "results/final_summary.txt"
+    params:
+        delay = 3
+    log:
+        "logs/final_summary.log"
+    shell:
+        """
+        exec > {log} 2>&1
+        echo "Creating final summary..."
+        sleep {params.delay}
+        echo "Pipeline complete" > {output}
+        cat {input} >> {output}
+        """

@@ -9,9 +9,9 @@ cd "$ROOT_DIR"
 # Install charmer binary
 cargo install --path crates/charmer
 
-# Clean and start the test pipeline
-pixi run clean-test
-snakemake --cores 2 --snakefile tests/pipelines/simple/Snakefile --directory tests/pipelines/simple &
+# Clean and start the demo pipeline
+pixi run clean-demo
+snakemake --cores 4 --snakefile tests/pipelines/demo/Snakefile --directory tests/pipelines/demo &
 PIPELINE_PID=$!
 
 # Wait for jobs to register

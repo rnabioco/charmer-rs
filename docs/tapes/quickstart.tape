@@ -18,7 +18,7 @@ Type "# Start monitoring"
 Enter
 Sleep 500ms
 
-Type "charmer tests/pipelines/simple"
+Type "charmer tests/pipelines/demo"
 Enter
 Sleep 3s
 
