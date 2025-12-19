@@ -49,12 +49,13 @@ enum DepRelation {
 }
 
 /// Compute dependency relationships for all jobs relative to selected job.
+/// Returns (relation, should_draw_line) for each job.
 fn compute_dependencies(
     state: &PipelineState,
     job_ids: &[String],
     selected_idx: Option<usize>,
-) -> Vec<DepRelation> {
-    let mut relations = vec![DepRelation::None; job_ids.len()];
+) -> Vec<(DepRelation, bool)> {
+    let mut relations = vec![(DepRelation::None, false); job_ids.len()];
 
     let Some(sel_idx) = selected_idx else {
         return relations;
@@ -74,7 +75,7 @@ fn compute_dependencies(
     };
 
     // Mark selected job
-    relations[sel_idx] = DepRelation::Selected;
+    relations[sel_idx].0 = DepRelation::Selected;
 
     // Build output->job_id map for finding upstream dependencies
     let mut output_to_job: HashMap<&str, &str> = HashMap::new();
@@ -106,15 +107,29 @@ fn compute_dependencies(
         }
     }
 
-    // Mark relationships in the list
+    // Mark relationships in the list and track chain member indices
+    let mut chain_indices: Vec<usize> = vec![sel_idx];
     for (idx, job_id) in job_ids.iter().enumerate() {
         if idx == sel_idx {
             continue;
         }
         if upstream_ids.contains(job_id.as_str()) {
-            relations[idx] = DepRelation::Upstream;
+            relations[idx].0 = DepRelation::Upstream;
+            chain_indices.push(idx);
         } else if downstream_ids.contains(job_id.as_str()) {
-            relations[idx] = DepRelation::Downstream;
+            relations[idx].0 = DepRelation::Downstream;
+            chain_indices.push(idx);
+        }
+    }
+
+    // Draw connecting lines between chain members
+    if chain_indices.len() > 1 {
+        let min_idx = *chain_indices.iter().min().unwrap();
+        let max_idx = *chain_indices.iter().max().unwrap();
+
+        // Mark all rows between min and max to draw the vertical line
+        for idx in min_idx..=max_idx {
+            relations[idx].1 = true; // draw line
         }
     }
 
@@ -196,7 +211,8 @@ impl JobList {
                     display_row += 1;
                     display_row
                 };
-                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, deps[i])
+                let (relation, draw_line) = deps[i];
+                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, relation, draw_line)
             })
             .collect();
 
@@ -235,6 +251,7 @@ fn build_job_item(
     selected: Option<usize>,
     opts: &DisplayOptions,
     dep_relation: DepRelation,
+    draw_line: bool,
 ) -> ListItem<'static> {
     // Handle main pipeline job specially
     if job_id == MAIN_PIPELINE_JOB_ID {
@@ -386,11 +403,13 @@ fn build_job_item(
         ));
     }
 
-    // Add dependency indicator on the right - vertical line with markers
+    // Add dependency indicator on the right - vertical chain with markers
+    // ○ = dependency node, ● = selected, │ = connecting line
     let dep_indicator = match dep_relation {
-        DepRelation::Selected => Span::styled("│●│", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        DepRelation::Upstream => Span::styled("│○│", Style::default().fg(Color::Cyan)),
-        DepRelation::Downstream => Span::styled("│○│", Style::default().fg(Color::Magenta)),
+        DepRelation::Selected => Span::styled(" ● ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        DepRelation::Upstream => Span::styled(" ○ ", Style::default().fg(Color::Cyan)),
+        DepRelation::Downstream => Span::styled(" ○ ", Style::default().fg(Color::Magenta)),
+        DepRelation::None if draw_line => Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
         DepRelation::None => Span::raw("   "),
     };
     spans.push(dep_indicator);
