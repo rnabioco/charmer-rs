@@ -1,41 +1,50 @@
-//! View tabs component for switching between Jobs and Rules views.
+//! View tabs component - generates title with inline tab selection.
 
 use crate::app::ViewMode;
 use ratatui::{
-    layout::Rect,
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Tabs},
-    Frame,
+    text::{Line, Span},
 };
 
 pub struct ViewTabs;
 
 impl ViewTabs {
-    /// Render the view tabs.
-    pub fn render(frame: &mut Frame, area: Rect, view_mode: ViewMode) {
-        let titles = vec!["Jobs", "Rules", "DAG"];
+    /// Generate a title Line with inline tab selection.
+    /// Returns something like: " [Jobs] Rules DAG "
+    pub fn title_line(view_mode: ViewMode) -> Line<'static> {
+        let tabs = [
+            ("Jobs", ViewMode::Jobs),
+            ("Rules", ViewMode::Rules),
+            ("DAG", ViewMode::Dag),
+        ];
 
-        let selected = match view_mode {
-            ViewMode::Jobs => 0,
-            ViewMode::Rules => 1,
-            ViewMode::Dag => 2,
-        };
+        let mut spans = Vec::new();
+        spans.push(Span::raw(" "));
 
-        let tabs = Tabs::new(titles)
-            .block(
-                Block::default()
-                    .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            )
-            .select(selected)
-            .style(Style::default().fg(Color::Gray))
-            .highlight_style(
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .divider(" │ ");
+        for (i, (name, mode)) in tabs.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled(" ", Style::default().fg(Color::DarkGray)));
+            }
 
-        frame.render_widget(tabs, area);
+            if *mode == view_mode {
+                // Selected tab - bold and highlighted
+                spans.push(Span::styled(
+                    format!("[{}]", name),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                // Unselected tab - dimmed
+                spans.push(Span::styled(
+                    name.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+        }
+
+        spans.push(Span::raw(" "));
+
+        Line::from(spans)
     }
 }

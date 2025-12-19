@@ -1,5 +1,7 @@
 //! Job list component with progress indicator.
 
+use crate::app::ViewMode;
+use crate::components::ViewTabs;
 use charmer_state::{Job, JobCounts, JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -508,12 +510,6 @@ fn render_progress_header(
     // Prefer total_jobs from snakemake log (more accurate) over counted jobs
     let total = total_jobs.unwrap_or(counts.total);
 
-    // Build the title line with counts and filter/sort info
-    let title = format!(
-        " Jobs ({}/{})  Filter: {} │ Sort: {} ",
-        visible, total, filter_label, sort_label
-    );
-
     // Calculate bar width - leave room for status counts, brackets, and count suffix
     // Format: "3R 24C 0F 1Q  [▮▮▮▮▮▮▮▮────](27/28)"
     let status_prefix_len = 20; // Approximate space for "3R 24C 0F 1Q  "
@@ -571,15 +567,22 @@ fn render_progress_header(
         ),
     ]);
 
-    // No top border - tabs have it
+    // Use tabs as title
+    let tabs_title = ViewTabs::title_line(ViewMode::Jobs);
+
+    // Show count and filter/sort info in title bottom
+    let info = format!(
+        " ({}/{}) Filter:{} Sort:{} ",
+        visible, total, filter_label, sort_label
+    );
+
     let block = Block::default()
-        .borders(Borders::LEFT | Borders::RIGHT)
-        .title(title)
-        .title_style(
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        );
+        .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+        .title(tabs_title)
+        .title_bottom(Line::from(Span::styled(
+            info,
+            Style::default().fg(Color::DarkGray),
+        )));
 
     let paragraph = Paragraph::new(status_line).block(block);
 
