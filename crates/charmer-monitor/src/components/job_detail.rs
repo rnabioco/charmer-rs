@@ -520,7 +520,7 @@ fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
         lines.push(Line::from(vec![
             Span::styled("  Runtime: ", Style::default().fg(Color::Gray)),
             Span::styled(
-                format_chrono_duration(&runtime),
+                format_chrono_duration_hms(&runtime),
                 Style::default().fg(runtime_color),
             ),
         ]));
@@ -531,7 +531,7 @@ fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
         lines.push(Line::from(vec![
             Span::styled("  Started: ", Style::default().fg(Color::Gray)),
             Span::styled(
-                started.format("%H:%M:%S").to_string(),
+                started.format("%Y-%m-%d %H:%M:%S").to_string(),
                 Style::default().fg(Color::White),
             ),
         ]));
@@ -795,6 +795,21 @@ fn format_chrono_duration(d: &chrono::Duration) -> String {
         format!("{:02}:{:02}:{:02}", hours, mins, secs)
     } else {
         format!("{:02}:{:02}", mins, secs)
+    }
+}
+
+fn format_chrono_duration_hms(d: &chrono::Duration) -> String {
+    let secs = d.num_seconds().unsigned_abs();
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    let secs = secs % 60;
+
+    if hours > 0 {
+        format!("{}h {}m {}s", hours, mins, secs)
+    } else if mins > 0 {
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", secs)
     }
 }
 
