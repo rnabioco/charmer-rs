@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     Frame,
 };
 use std::fs;
@@ -180,6 +180,20 @@ impl LogViewer {
             .wrap(Wrap { trim: false });
 
         frame.render_widget(paragraph, area);
+
+        // Render scrollbar if content exceeds viewport
+        if state.lines.len() > content_height as usize {
+            let mut scrollbar_state =
+                ScrollbarState::new(state.lines.len()).position(state.scroll_offset);
+
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█");
+
+            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        }
     }
 
     /// Render the log viewer footer with keybindings.
@@ -241,12 +255,26 @@ impl LogViewer {
         // Create the block with border
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray))
             .title(title)
             .title_style(Style::default().fg(Color::Cyan));
 
         let paragraph = Paragraph::new(content).block(block);
 
         frame.render_widget(paragraph, area);
+
+        // Render scrollbar for panel if content exceeds viewport
+        if state.lines.len() > content_height {
+            let scroll_pos = state.lines.len().saturating_sub(content_height);
+            let mut scrollbar_state =
+                ScrollbarState::new(state.lines.len()).position(scroll_pos);
+
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█");
+
+            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        }
     }
 }

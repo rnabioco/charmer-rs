@@ -606,7 +606,7 @@ impl App {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Header (bordered)
+                    Constraint::Length(3),  // Header (1 line + borders)
                     Constraint::Min(8),     // Main content (smaller when logs open)
                     Constraint::Length(12), // Log panel
                     Constraint::Length(1),  // Footer
@@ -616,7 +616,7 @@ impl App {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // Header (bordered)
+                    Constraint::Length(3), // Header (1 line + borders)
                     Constraint::Min(10),   // Main content
                     Constraint::Length(0), // No log panel
                     Constraint::Length(1), // Footer
@@ -633,7 +633,7 @@ impl App {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[1]);
 
-        // Render based on view mode
+        // Render based on view mode - tabs are now in the block titles
         match self.view_mode {
             ViewMode::Jobs => {
                 // Job list (left) and detail (right)
@@ -660,7 +660,7 @@ impl App {
                 }
             }
             ViewMode::Rules => {
-                // Rule summary table (full width of left panel)
+                // Rule summary table (left panel)
                 RuleSummary::render(
                     frame,
                     main_chunks[0],
@@ -681,7 +681,7 @@ impl App {
             self.render_log_panel(frame, chunks[2]);
         }
 
-        // Footer with status message
+        // Get recent status message (within 3 seconds)
         let status_msg = self.status_message.as_ref().and_then(|(msg, timestamp)| {
             if timestamp.elapsed() < Duration::from_secs(3) {
                 Some(msg.as_str())
@@ -689,6 +689,8 @@ impl App {
                 None
             }
         });
+
+        // Footer with optional status message
         Footer::render(frame, chunks[3], status_msg);
 
         // Help overlay (on top of everything)
@@ -719,11 +721,12 @@ impl App {
         lines.push(Line::from(""));
 
         // Get jobs for this rule
+        let mut running = 0;
+        let mut completed = 0;
+        let mut failed = 0;
+        let mut pending = 0;
+
         if let Some(job_ids) = self.state.jobs_by_rule.get(rule) {
-            let mut running = 0;
-            let mut completed = 0;
-            let mut failed = 0;
-            let mut pending = 0;
             let mut total_runtime: u64 = 0;
             let mut completed_count = 0;
 
@@ -834,6 +837,58 @@ impl App {
             ]));
         }
 
+        // Add job status as colored text (compact display)
+        let total = running + completed + failed + pending;
+        if total > 0 {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Job Status",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            )));
+
+            // Compact colored status: ▶3 ✓12 ✗1 ○5
+            let mut status_spans = vec![Span::raw("  ")];
+
+            if running > 0 {
+                status_spans.push(Span::styled(
+                    format!("▶{}", running),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ));
+                status_spans.push(Span::raw(" "));
+            }
+
+            status_spans.push(Span::styled(
+                format!("✓{}", completed),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            status_spans.push(Span::raw(" "));
+
+            if failed > 0 {
+                status_spans.push(Span::styled(
+                    format!("✗{}", failed),
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ));
+                status_spans.push(Span::raw(" "));
+            }
+
+            if pending > 0 {
+                status_spans.push(Span::styled(
+                    format!("○{}", pending),
+                    Style::default()
+                        .fg(Color::Blue)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+
+            lines.push(Line::from(status_spans));
+        }
+
         let paragraph = Paragraph::new(lines).block(
             Block::default()
                 .borders(Borders::ALL)
@@ -864,6 +919,7 @@ impl App {
   g / Home   Go to first item
   G / End    Go to last item
   r          Toggle view (Jobs/Rules summary)
+  d          Toggle DAG view
   f          Cycle filter (All/Running/Failed/Pending/Completed)
   s          Cycle sort (Status/Rule/Time)
   l / Enter  Toggle log panel

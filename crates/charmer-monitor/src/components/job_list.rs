@@ -1,32 +1,214 @@
-//! Job list component with progress indicator.
+//! Job list component with progress indicator and dependency visualization.
 
+use crate::app::ViewMode;
+use crate::components::ViewTabs;
 use charmer_state::{Job, JobCounts, JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{
+        Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
+    },
     Frame,
 };
+use std::collections::{HashMap, HashSet};
 
 /// Minimum widths for columns
 const MIN_ROW_WIDTH: u16 = 4;
 const MIN_STATUS_WIDTH: u16 = 2;
 const MIN_RULE_WIDTH: u16 = 12;
-const MAX_RULE_WIDTH: u16 = 24; // Cap rule column to prevent excessive width
-const MIN_SAMPLE_WIDTH: u16 = 10;
-const MIN_SLURM_WIDTH: u16 = 10;
+const MAX_RULE_WIDTH: u16 = 20; // Cap rule column to prevent excessive width
+const MIN_WILDCARDS_WIDTH: u16 = 16;
+const MAX_WILDCARDS_WIDTH: u16 = 30; // Give wildcards more room
+const RUNTIME_WIDTH: u16 = 6; // Fixed width for runtime (e.g., "1h23m" or "45m12s")
+const CHAIN_WIDTH: u16 = 3; // Fixed width for dependency chain indicator
 
 /// Column visibility thresholds (panel width needed to show column)
-const SAMPLE_THRESHOLD: u16 = 40;
-const SLURM_THRESHOLD: u16 = 60;
+const WILDCARDS_THRESHOLD: u16 = 45;
+const RUNTIME_THRESHOLD: u16 = 65;
 
 /// Display options for job list items
 struct DisplayOptions {
     content_width: u16,
-    show_sample: bool,
-    show_slurm: bool,
-    has_scheduler_jobs: bool,
+    show_wildcards: bool,
+    show_runtime: bool,
+}
+
+/// Dependency relationship to the selected job
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DepRelation {
+    /// This is the selected job
+    Selected,
+    /// This job is an upstream dependency (selected depends on this)
+    Upstream,
+    /// This job is a downstream dependent (this depends on selected)
+    Downstream,
+    /// No relation to selected job
+    None,
+}
+
+/// Position in the dependency chain for rendering tree connectors
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChainPosition {
+    /// First node in chain (top) - uses ┐
+    First,
+    /// Last node in chain (bottom) - uses ┘
+    Last,
+    /// Middle node - uses ┤
+    Middle,
+    /// Not a node, just trunk passing through - uses │
+    Trunk,
+    /// Outside the chain entirely
+    Outside,
+}
+
+/// Compute dependency relationships for all jobs relative to selected job.
+/// Returns (relation, chain_position) for each job.
+/// This finds the FULL transitive dependency chain (all ancestors and descendants).
+fn compute_dependencies(
+    state: &PipelineState,
+    job_ids: &[String],
+    selected_idx: Option<usize>,
+) -> Vec<(DepRelation, ChainPosition)> {
+    let mut relations = vec![(DepRelation::None, ChainPosition::Outside); job_ids.len()];
+
+    let Some(sel_idx) = selected_idx else {
+        return relations;
+    };
+
+    let Some(selected_id) = job_ids.get(sel_idx) else {
+        return relations;
+    };
+
+    // Skip if main pipeline job is selected
+    if selected_id == MAIN_PIPELINE_JOB_ID {
+        return relations;
+    }
+
+    if state.jobs.get(selected_id).is_none() {
+        return relations;
+    }
+
+    // Mark selected job
+    relations[sel_idx].0 = DepRelation::Selected;
+
+    // Build output->job_id map for finding upstream dependencies
+    let mut output_to_job: HashMap<&str, &str> = HashMap::new();
+    for (job_id, job) in &state.jobs {
+        for output in &job.outputs {
+            output_to_job.insert(output.as_str(), job_id.as_str());
+        }
+    }
+
+    // Build input->job_ids map for finding downstream dependencies
+    let mut input_to_jobs: HashMap<&str, Vec<&str>> = HashMap::new();
+    for (job_id, job) in &state.jobs {
+        for input in &job.inputs {
+            input_to_jobs
+                .entry(input.as_str())
+                .or_default()
+                .push(job_id.as_str());
+        }
+    }
+
+    // Find all transitive upstream dependencies (ancestors)
+    let mut upstream_ids: HashSet<&str> = HashSet::new();
+    let mut to_visit: Vec<&str> = vec![selected_id.as_str()];
+    let mut visited: HashSet<&str> = HashSet::new();
+
+    while let Some(current_id) = to_visit.pop() {
+        if visited.contains(current_id) {
+            continue;
+        }
+        visited.insert(current_id);
+
+        if let Some(job) = state.jobs.get(current_id) {
+            for input in &job.inputs {
+                if let Some(&parent_id) = output_to_job.get(input.as_str()) {
+                    if parent_id != selected_id.as_str() {
+                        upstream_ids.insert(parent_id);
+                    }
+                    if !visited.contains(parent_id) {
+                        to_visit.push(parent_id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Find all transitive downstream dependencies (descendants)
+    let mut downstream_ids: HashSet<&str> = HashSet::new();
+    let mut to_visit: Vec<&str> = vec![selected_id.as_str()];
+    let mut visited: HashSet<&str> = HashSet::new();
+
+    while let Some(current_id) = to_visit.pop() {
+        if visited.contains(current_id) {
+            continue;
+        }
+        visited.insert(current_id);
+
+        if let Some(job) = state.jobs.get(current_id) {
+            // Find jobs that consume this job's outputs
+            for output in &job.outputs {
+                if let Some(child_ids) = input_to_jobs.get(output.as_str()) {
+                    for &child_id in child_ids {
+                        if child_id != selected_id.as_str() {
+                            downstream_ids.insert(child_id);
+                        }
+                        if !visited.contains(child_id) {
+                            to_visit.push(child_id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Mark relationships and collect chain member indices
+    let mut chain_indices: Vec<usize> = vec![sel_idx];
+    for (idx, job_id) in job_ids.iter().enumerate() {
+        if idx == sel_idx {
+            continue;
+        }
+        if upstream_ids.contains(job_id.as_str()) {
+            relations[idx].0 = DepRelation::Upstream;
+            chain_indices.push(idx);
+        } else if downstream_ids.contains(job_id.as_str()) {
+            relations[idx].0 = DepRelation::Downstream;
+            chain_indices.push(idx);
+        }
+    }
+
+    // Determine chain positions for tree rendering
+    if chain_indices.len() > 1 {
+        chain_indices.sort();
+        let min_idx = chain_indices[0];
+        let max_idx = chain_indices[chain_indices.len() - 1];
+
+        // Mark positions for all rows in the range
+        for idx in min_idx..=max_idx {
+            if relations[idx].0 != DepRelation::None {
+                // This is an actual chain member
+                if idx == min_idx {
+                    relations[idx].1 = ChainPosition::First;
+                } else if idx == max_idx {
+                    relations[idx].1 = ChainPosition::Last;
+                } else {
+                    relations[idx].1 = ChainPosition::Middle;
+                }
+            } else {
+                // Trunk passes through
+                relations[idx].1 = ChainPosition::Trunk;
+            }
+        }
+    } else if chain_indices.len() == 1 {
+        // Only selected job, no dependencies to show
+        relations[sel_idx].1 = ChainPosition::Outside;
+    }
+
+    relations
 }
 
 pub struct JobList;
@@ -44,10 +226,10 @@ impl JobList {
     ) {
         let counts = state.job_counts();
 
-        // Count visible jobs excluding MAIN_PIPELINE_JOB_ID
+        // Calculate visible job count (exclude main pipeline pseudo-job)
         let visible = filtered_job_ids
             .iter()
-            .filter(|id| *id != MAIN_PIPELINE_JOB_ID)
+            .filter(|id| id.as_str() != MAIN_PIPELINE_JOB_ID)
             .count();
 
         // Split area: progress bar on top, column headers, list below
@@ -60,7 +242,7 @@ impl JobList {
             ])
             .split(area);
 
-        // Render progress header with filter/sort in title
+        // Render progress header
         render_progress_header(
             frame,
             chunks[0],
@@ -74,34 +256,34 @@ impl JobList {
         // Calculate available width for content (minus borders)
         let content_width = chunks[1].width.saturating_sub(2);
 
-        // Check if any job has a SLURM ID to determine column type
-        let has_scheduler_jobs = state.jobs.values().any(|j| j.slurm_job_id.is_some());
-
         // Determine which columns to show based on width
         let opts = DisplayOptions {
             content_width,
-            show_sample: content_width >= SAMPLE_THRESHOLD,
-            show_slurm: content_width >= SLURM_THRESHOLD,
-            has_scheduler_jobs,
+            show_wildcards: content_width >= WILDCARDS_THRESHOLD,
+            show_runtime: content_width >= RUNTIME_THRESHOLD,
         };
 
         // Render column headers
         render_column_headers(frame, chunks[1], &opts);
 
+        // Compute dependency relationships for visual indicator
+        let deps = compute_dependencies(state, filtered_job_ids, selected);
+
         // Build job list items with responsive columns
-        // Track display row separately to exclude MAIN_PIPELINE_JOB_ID from numbering
+        // Track display row number separately (main pipeline job doesn't get a number)
         let mut display_row = 0usize;
         let items: Vec<ListItem> = filtered_job_ids
             .iter()
             .enumerate()
             .map(|(i, job_id)| {
                 let row_num = if job_id == MAIN_PIPELINE_JOB_ID {
-                    0
+                    0 // Main pipeline uses special display, row num not shown
                 } else {
                     display_row += 1;
                     display_row
                 };
-                build_job_item(row_num, i, job_id, state, &counts, selected, &opts)
+                let (relation, chain_pos) = deps[i];
+                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, relation, chain_pos)
             })
             .collect();
 
@@ -112,22 +294,48 @@ impl JobList {
         list_state.select(selected);
 
         frame.render_stateful_widget(list, chunks[2], &mut list_state);
+
+        // Render scrollbar if there are more items than visible
+        let list_height = chunks[2].height.saturating_sub(2) as usize; // minus borders
+        if filtered_job_ids.len() > list_height {
+            let mut scrollbar_state = ScrollbarState::new(filtered_job_ids.len())
+                .position(selected.unwrap_or(0))
+                .viewport_content_length(list_height);
+
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█");
+
+            // Use full panel area with 2-space inset from top and bottom
+            let scrollbar_area = Rect {
+                x: area.x,
+                y: area.y + 2,
+                width: area.width,
+                height: area.height.saturating_sub(4), // 2 top + 2 bottom
+            };
+
+            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+        }
     }
 }
 
 /// Build a single job list item with responsive columns.
 fn build_job_item(
     row_num: usize,
-    index: usize,
+    list_index: usize,
     job_id: &str,
     state: &PipelineState,
     counts: &JobCounts,
     selected: Option<usize>,
     opts: &DisplayOptions,
+    dep_relation: DepRelation,
+    chain_pos: ChainPosition,
 ) -> ListItem<'static> {
     // Handle main pipeline job specially
     if job_id == MAIN_PIPELINE_JOB_ID {
-        return build_main_pipeline_item(state, counts, selected == Some(index));
+        return build_main_pipeline_item(state, counts, selected == Some(list_index));
     }
 
     // Regular job
@@ -135,28 +343,32 @@ fn build_job_item(
         return ListItem::new(Line::from(Span::raw("???")));
     };
 
-    let is_selected = selected == Some(index);
+    let is_selected = selected == Some(list_index);
     let status_style = get_status_style(job.status);
 
-    // Extract sample from wildcards
-    let sample = extract_sample(job);
+    // Extract wildcards for colored display
+    let wildcards = extract_wildcards(job);
 
     // Calculate column widths
-    let fixed_width = MIN_ROW_WIDTH + MIN_STATUS_WIDTH;
+    // Layout: # | Status | Rule | Wildcards | Runtime | Chain
+    // Chain is always at far right (fixed 3 chars)
+    let fixed_width = MIN_ROW_WIDTH + MIN_STATUS_WIDTH + CHAIN_WIDTH;
     let mut remaining = opts.content_width.saturating_sub(fixed_width);
 
-    // Reserve space for optional columns
-    let sample_width = if opts.show_sample {
-        let w = MIN_SAMPLE_WIDTH.min(remaining / 3);
-        remaining = remaining.saturating_sub(w + 1); // +1 for separator
-        w
+    // Reserve fixed width for runtime (rightmost before chain)
+    let runtime_width = if opts.show_runtime {
+        remaining = remaining.saturating_sub(RUNTIME_WIDTH + 1); // +1 for separator
+        RUNTIME_WIDTH
     } else {
         0
     };
 
-    let slurm_width = if opts.show_slurm {
-        let w = MIN_SLURM_WIDTH.min(remaining / 3);
-        remaining = remaining.saturating_sub(w + 1);
+    // Reserve space for wildcards column (generous width)
+    let wildcards_width = if opts.show_wildcards {
+        let w = remaining
+            .saturating_sub(MAX_RULE_WIDTH + 1) // leave room for rule
+            .clamp(MIN_WILDCARDS_WIDTH, MAX_WILDCARDS_WIDTH);
+        remaining = remaining.saturating_sub(w + 1); // +1 for separator
         w
     } else {
         0
@@ -179,9 +391,9 @@ fn build_job_item(
     spans.push(Span::styled(format!("{:3} ", row_num), row_style));
 
     // Status symbol (highlighted when selected)
-    // Use ◎ for target rules (like "all"), otherwise use status symbol
+    // Use 🎯 for target rules (like "all"), otherwise use status symbol
     let status_symbol = if job.is_target {
-        "◎"
+        "🎯"
     } else {
         job.status.symbol()
     };
@@ -207,73 +419,144 @@ fn build_job_item(
         rule_style,
     ));
 
-    // Sample column (if width allows)
-    if opts.show_sample {
+    // Wildcards column (if width allows) - colored with pipe separators
+    if opts.show_wildcards {
         let sep_style = if is_selected {
             Style::default().fg(Color::Gray)
         } else {
             Style::default().fg(Color::DarkGray)
         };
         spans.push(Span::styled(" │ ", sep_style));
-        let sample_display = truncate_str(&sample, sample_width as usize);
-        let sample_style = if is_selected {
+
+        // Build colored wildcard spans: value1|value2|value3
+        let mut wildcard_spans: Vec<Span> = Vec::new();
+        let mut total_len = 0usize;
+        let max_len = wildcards_width as usize;
+
+        for (i, value) in wildcards.iter().enumerate() {
+            if i > 0 {
+                // Add pipe separator
+                if total_len + 1 <= max_len {
+                    wildcard_spans.push(Span::styled("|", sep_style));
+                    total_len += 1;
+                } else {
+                    break;
+                }
+            }
+
+            // Get color for this wildcard (cycle through palette)
+            let base_color = WILDCARD_COLORS[i % WILDCARD_COLORS.len()];
+            let style = if is_selected {
+                Style::default().fg(base_color).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(base_color)
+            };
+
+            // Truncate value if needed
+            let remaining_space = max_len.saturating_sub(total_len);
+            if remaining_space == 0 {
+                break;
+            }
+            let display_value = if value.len() <= remaining_space {
+                value.clone()
+            } else if remaining_space > 1 {
+                format!("{}…", &value[..remaining_space - 1])
+            } else {
+                "…".to_string()
+            };
+            total_len += display_value.len();
+            wildcard_spans.push(Span::styled(display_value, style));
+        }
+
+        // Pad to column width
+        let padding = max_len.saturating_sub(total_len);
+        if padding > 0 {
+            wildcard_spans.push(Span::raw(" ".repeat(padding)));
+        }
+
+        spans.extend(wildcard_spans);
+    }
+
+    // Runtime column (fixed width, right-aligned)
+    if opts.show_runtime {
+        let sep_style = if is_selected {
+            Style::default().fg(Color::Gray)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        spans.push(Span::styled(" │ ", sep_style));
+
+        let runtime = get_job_runtime(job);
+        let runtime_style = if is_selected {
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Cyan)
+            Style::default().fg(Color::Yellow)
         };
         spans.push(Span::styled(
-            format!("{:<width$}", sample_display, width = sample_width as usize),
-            sample_style,
+            format!("{:>width$}", runtime, width = runtime_width as usize),
+            runtime_style,
         ));
     }
 
-    // Third column: Job ID or Runtime (if width allows)
-    if opts.show_slurm {
-        let sep_style = if is_selected {
-            Style::default().fg(Color::Gray)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-        spans.push(Span::styled(" │ ", sep_style));
+    // Dependency tree indicator (always at far right, fixed width)
+    // Format: ○─┐ (first), ○─┤ (middle), ○─┘ (last), or just │ (trunk)
+    // Dot style: ○ pending, ● completed, ◐ running
+    let tree_style = Style::default().fg(Color::White);
 
-        let (col_display, col_style) = if opts.has_scheduler_jobs {
-            // Show SLURM/LSF job ID or "local" for localrules
-            let display = job
-                .slurm_job_id
-                .as_deref()
-                .map(|s| truncate_str(s, slurm_width as usize))
-                .unwrap_or_else(|| "local".to_string());
-            let style = if job.slurm_job_id.is_some() {
-                if is_selected {
-                    Style::default().fg(Color::Gray)
-                } else {
-                    Style::default().fg(Color::DarkGray)
-                }
-            } else {
-                // "local" in a different color
-                Style::default().fg(Color::Magenta)
-            };
-            (display, style)
-        } else {
-            // No scheduler - show runtime instead
-            let runtime = get_job_runtime(job);
-            let style = if is_selected {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(Color::Yellow)
-            };
-            (truncate_str(&runtime, slurm_width as usize), style)
-        };
+    // Choose dot based on job status
+    let status_dot = match job.status {
+        JobStatus::Running => "◐",
+        JobStatus::Completed => "●",
+        _ => "○", // Pending, Queued, Failed, etc.
+    };
 
-        spans.push(Span::styled(
-            format!("{:<width$}", col_display, width = slurm_width as usize),
-            col_style,
-        ));
-    }
+    let dep_indicator: Vec<Span> = match chain_pos {
+        ChainPosition::First => {
+            let dot_style = match dep_relation {
+                DepRelation::Upstream => Style::default().fg(Color::Cyan),
+                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Downstream => Style::default().fg(Color::Magenta),
+                DepRelation::None => tree_style,
+            };
+            vec![
+                Span::styled(status_dot, dot_style),
+                Span::styled("─┐", tree_style),
+            ]
+        }
+        ChainPosition::Middle => {
+            let dot_style = match dep_relation {
+                DepRelation::Upstream => Style::default().fg(Color::Cyan),
+                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Downstream => Style::default().fg(Color::Magenta),
+                DepRelation::None => tree_style,
+            };
+            vec![
+                Span::styled(status_dot, dot_style),
+                Span::styled("─┤", tree_style),
+            ]
+        }
+        ChainPosition::Last => {
+            let dot_style = match dep_relation {
+                DepRelation::Upstream => Style::default().fg(Color::Cyan),
+                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Downstream => Style::default().fg(Color::Magenta),
+                DepRelation::None => tree_style,
+            };
+            vec![
+                Span::styled(status_dot, dot_style),
+                Span::styled("─┘", tree_style),
+            ]
+        }
+        ChainPosition::Trunk => {
+            vec![Span::styled("  │", tree_style)]
+        }
+        ChainPosition::Outside => {
+            vec![Span::raw("   ")]
+        }
+    };
+    spans.extend(dep_indicator);
 
     ListItem::new(Line::from(spans))
 }
@@ -365,32 +648,33 @@ fn get_status_style(status: JobStatus) -> Style {
     }
 }
 
-/// Extract sample name from job wildcards.
-fn extract_sample(job: &Job) -> String {
+/// Extract wildcards as separate values for colored display.
+fn extract_wildcards(job: &Job) -> Vec<String> {
     let Some(wildcards) = &job.wildcards else {
-        return String::new();
+        return Vec::new();
     };
 
     // Parse wildcards like "sample=sample1, chrom=chr1"
-    // Prioritize "sample" key, fall back to first value
-    for part in wildcards.split(',') {
-        let part = part.trim();
-        if let Some((key, value)) = part.split_once('=') {
-            if key.trim() == "sample" {
-                return value.trim().to_string();
-            }
-        }
-    }
-
-    // No "sample" key found, use first wildcard value
-    if let Some(first) = wildcards.split(',').next() {
-        if let Some((_, value)) = first.trim().split_once('=') {
-            return value.trim().to_string();
-        }
-    }
-
-    String::new()
+    // Return each value separately for colored rendering
+    wildcards
+        .split(',')
+        .filter_map(|part| {
+            part.trim()
+                .split_once('=')
+                .map(|(_, value)| value.trim().to_string())
+        })
+        .collect()
 }
+
+/// Color palette for wildcard values.
+const WILDCARD_COLORS: [Color; 6] = [
+    Color::Cyan,
+    Color::Magenta,
+    Color::Yellow,
+    Color::Green,
+    Color::Blue,
+    Color::Red,
+];
 
 /// Truncate a string to fit within a given width.
 fn truncate_str(s: &str, max_width: usize) -> String {
@@ -411,19 +695,20 @@ fn render_column_headers(frame: &mut Frame, area: Rect, opts: &DisplayOptions) {
     let sep_style = Style::default().fg(Color::DarkGray);
 
     // Calculate column widths (same logic as build_job_item)
-    let fixed_width = MIN_ROW_WIDTH + MIN_STATUS_WIDTH;
+    let fixed_width = MIN_ROW_WIDTH + MIN_STATUS_WIDTH + CHAIN_WIDTH;
     let mut remaining = opts.content_width.saturating_sub(fixed_width);
 
-    let sample_width = if opts.show_sample {
-        let w = MIN_SAMPLE_WIDTH.min(remaining / 3);
-        remaining = remaining.saturating_sub(w + 1);
-        w
+    let runtime_width = if opts.show_runtime {
+        remaining = remaining.saturating_sub(RUNTIME_WIDTH + 1);
+        RUNTIME_WIDTH
     } else {
         0
     };
 
-    let slurm_width = if opts.show_slurm {
-        let w = MIN_SLURM_WIDTH.min(remaining / 3);
+    let wildcards_width = if opts.show_wildcards {
+        let w = remaining
+            .saturating_sub(MAX_RULE_WIDTH + 1)
+            .clamp(MIN_WILDCARDS_WIDTH, MAX_WILDCARDS_WIDTH);
         remaining = remaining.saturating_sub(w + 1);
         w
     } else {
@@ -447,28 +732,42 @@ fn render_column_headers(frame: &mut Frame, area: Rect, opts: &DisplayOptions) {
         header_style,
     ));
 
-    // Sample column header
-    if opts.show_sample {
+    // Wildcards column header with rainbow "Wildcards"
+    if opts.show_wildcards {
+        spans.push(Span::styled(" │ ", sep_style));
+
+        // "Samples/" in white, then "Wildcards" in rainbow
+        spans.push(Span::styled("Samples/", header_style));
+
+        // Rainbow "Wildcards" - each letter gets a color from palette
+        let wildcards_text = "Wildcards";
+        for (i, ch) in wildcards_text.chars().enumerate() {
+            let color = WILDCARD_COLORS[i % WILDCARD_COLORS.len()];
+            spans.push(Span::styled(
+                ch.to_string(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Pad to fill remaining width
+        let header_len = "Samples/Wildcards".len();
+        let padding = (wildcards_width as usize).saturating_sub(header_len);
+        if padding > 0 {
+            spans.push(Span::raw(" ".repeat(padding)));
+        }
+    }
+
+    // Runtime column header
+    if opts.show_runtime {
         spans.push(Span::styled(" │ ", sep_style));
         spans.push(Span::styled(
-            format!("{:<width$}", "Sample", width = sample_width as usize),
+            format!("{:>width$}", "Time", width = runtime_width as usize),
             header_style,
         ));
     }
 
-    // Third column header (Job ID or Runtime)
-    if opts.show_slurm {
-        spans.push(Span::styled(" │ ", sep_style));
-        let header_text = if opts.has_scheduler_jobs {
-            "Job ID"
-        } else {
-            "Runtime"
-        };
-        spans.push(Span::styled(
-            format!("{:<width$}", header_text, width = slurm_width as usize),
-            header_style,
-        ));
-    }
+    // Chain column - just space (no header text)
+    spans.push(Span::raw("   "));
 
     let header_line = Line::from(spans);
     let paragraph =
@@ -482,7 +781,7 @@ fn render_progress_header(
     frame: &mut Frame,
     area: Rect,
     counts: &JobCounts,
-    visible: usize,
+    _visible: usize,
     total_jobs: Option<usize>,
     filter_label: &str,
     sort_label: &str,
@@ -490,76 +789,58 @@ fn render_progress_header(
     // Prefer total_jobs from snakemake log (more accurate) over counted jobs
     let total = total_jobs.unwrap_or(counts.total);
 
-    // Build the title line with counts, filter, and sort
-    let title = format!(
-        " Jobs ({}/{}) │ Filter: {} │ Sort: {} ",
-        visible, total, filter_label, sort_label
-    );
-
-    // Create progress bar with [▮▮▮▮────](n/m) style
-    // Leave room for the count suffix like "(27/28)"
-    let count_suffix = format!("({}/{})", visible, total);
-    let bar_width = (area.width.saturating_sub(4) as usize) // borders + padding
-        .saturating_sub(count_suffix.len() + 3); // brackets + space
-    let filled = if total > 0 {
-        (bar_width as f64 * visible as f64 / total as f64) as usize
-    } else {
-        0
-    };
-
-    // Build the progress bar with Unicode characters
-    let bar_filled: String = "▮".repeat(filled.min(bar_width));
-    let bar_empty: String = "─".repeat(bar_width.saturating_sub(filled));
-
-    // Status summary line with bold text
-    let bold = Modifier::BOLD;
-    let status_line = Line::from(vec![
-        Span::styled(
-            format!("{} Run", counts.running),
-            Style::default().fg(Color::Yellow).add_modifier(bold),
-        ),
-        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("{} Done", counts.completed),
-            Style::default().fg(Color::Green).add_modifier(bold),
-        ),
-        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("{} Fail", counts.failed),
-            Style::default()
-                .fg(if counts.failed > 0 {
-                    Color::Red
-                } else {
-                    Color::DarkGray
-                })
-                .add_modifier(bold),
-        ),
-        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-        Span::styled(
-            format!("{} Pend", counts.queued + counts.pending),
-            Style::default().fg(Color::Blue).add_modifier(bold),
-        ),
-        Span::raw("  "),
-        Span::styled("[", Style::default().fg(Color::White).add_modifier(bold)),
-        Span::styled(bar_filled, Style::default().fg(Color::Green)),
-        Span::styled(bar_empty, Style::default().fg(Color::DarkGray)),
-        Span::styled("]", Style::default().fg(Color::White).add_modifier(bold)),
-        Span::styled(
-            count_suffix,
-            Style::default().fg(Color::White).add_modifier(bold),
-        ),
-    ]);
+    // Use tabs as title
+    let tabs_title = ViewTabs::title_line(ViewMode::Jobs);
 
     let block = Block::default()
         .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-        .title(title)
-        .title_style(
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        );
+        .title(tabs_title);
 
-    let paragraph = Paragraph::new(status_line).block(block);
+    // Calculate inner area for the gauge layout
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
 
-    frame.render_widget(paragraph, area);
+    // Layout: Filter/Sort | Gauge | (count)
+    // Calculate width for filter/sort section
+    let filter_sort_width = 8 + filter_label.len() + 7 + sort_label.len() + 2; // "Filter:" + label + " Sort:" + label + padding
+    let count_text = format!("({}/{})", counts.completed, total);
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(filter_sort_width as u16),    // Filter/Sort with padding
+            Constraint::Min(1),                               // Gauge fills remaining
+            Constraint::Length(count_text.len() as u16 + 1), // +1 for padding
+        ])
+        .split(inner);
+
+    // Filter/Sort label on left with colored values
+    let filter_sort = Paragraph::new(Line::from(vec![
+        Span::styled(" Filter:", Style::default().fg(Color::DarkGray)),
+        Span::styled(filter_label, Style::default().fg(Color::Cyan)),
+        Span::styled(" Sort:", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{} ", sort_label), Style::default().fg(Color::Yellow)),
+    ]));
+    frame.render_widget(filter_sort, chunks[0]);
+
+    // Gauge in middle
+    let ratio = if total > 0 {
+        counts.completed as f64 / total as f64
+    } else {
+        0.0
+    };
+
+    let gauge = Gauge::default()
+        .gauge_style(Style::default().fg(Color::Green).bg(Color::DarkGray))
+        .ratio(ratio.min(1.0));
+    frame.render_widget(gauge, chunks[1]);
+
+    // Count on right
+    let count = Paragraph::new(Line::from(Span::styled(
+        format!("{} ", count_text),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )));
+    frame.render_widget(count, chunks[2]);
 }

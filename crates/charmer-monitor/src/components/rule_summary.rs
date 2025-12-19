@@ -1,11 +1,13 @@
 //! Rule summary component showing aggregated statistics per rule.
 
+use crate::app::ViewMode;
+use crate::components::ViewTabs;
 use charmer_state::{JobStatus, PipelineState};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Row, Table, TableState},
+    text::Span,
+    widgets::{Block, Borders, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState},
     Frame,
 };
 
@@ -179,14 +181,8 @@ impl RuleSummary {
         ])
         .style(Style::default().add_modifier(Modifier::UNDERLINED));
 
-        let title = Line::from(vec![
-            Span::styled(" Rules ", Style::default().fg(Color::White)),
-            Span::styled(
-                format!("({}) ", rule_names.len()),
-                Style::default().fg(Color::Gray),
-            ),
-            Span::styled("[r: jobs view]", Style::default().fg(Color::DarkGray)),
-        ]);
+        // Use tabs as title
+        let title = ViewTabs::title_line(ViewMode::Rules);
 
         let table = Table::new(
             rows,
@@ -201,13 +197,33 @@ impl RuleSummary {
             ],
         )
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title),
+        )
+        // Text emphasis only, no background - matches job list
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
         let mut table_state = TableState::default();
         table_state.select(selected);
 
         frame.render_stateful_widget(table, area, &mut table_state);
+
+        // Render scrollbar if needed
+        let table_height = area.height.saturating_sub(3) as usize; // header + borders
+        if rule_names.len() > table_height {
+            let mut scrollbar_state =
+                ScrollbarState::new(rule_names.len()).position(selected.unwrap_or(0));
+
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█");
+
+            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        }
     }
 }
 

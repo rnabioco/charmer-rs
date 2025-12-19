@@ -1,4 +1,4 @@
-//! Header component with compact status display.
+//! Header component with dense single-line info display.
 
 use charmer_state::PipelineState;
 use chrono::Local;
@@ -14,8 +14,6 @@ pub struct Header;
 
 impl Header {
     pub fn render(frame: &mut Frame, area: Rect, state: &PipelineState) {
-        let counts = state.job_counts();
-
         // Current date/time
         let now = Local::now();
         let datetime = now.format("%Y-%m-%d %H:%M:%S").to_string();
@@ -29,12 +27,13 @@ impl Header {
             working_dir.to_string()
         };
 
-        // Build the single-line content
+        let sep = Span::styled(" │ ", Style::default().fg(Color::DarkGray));
+
         let mut spans = Vec::new();
 
         // App name with status
         spans.push(Span::styled(
-            "🐍 charmer ",
+            "🐍 charmer",
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
@@ -42,6 +41,7 @@ impl Header {
 
         // Status indicator
         if state.pipeline_finished {
+            spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 "✓",
                 Style::default()
@@ -49,55 +49,53 @@ impl Header {
                     .add_modifier(Modifier::BOLD),
             ));
         } else if !state.pipeline_errors.is_empty() {
+            spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 "✗",
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ));
-        } else {
-            spans.push(Span::styled(
-                "▶",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ));
         }
 
-        // Separator and working dir
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(sep.clone());
+
+        // Working directory
         spans.push(Span::styled(dir_display, Style::default().fg(Color::White)));
 
-        // ETA (if running and available)
-        if !state.pipeline_finished && state.pipeline_errors.is_empty() {
-            if let Some(eta) = state.eta_string() {
-                spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        // ETA (only if running and available)
+        if let Some(eta) = state.eta_string() {
+            if !state.pipeline_finished && state.pipeline_errors.is_empty() {
+                spans.push(sep.clone());
                 spans.push(Span::styled("ETA: ", Style::default().fg(Color::Gray)));
-                spans.push(Span::styled(eta, Style::default().fg(Color::Magenta)));
+                spans.push(Span::styled(
+                    eta,
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ));
             }
         }
 
-        // Separator and datetime
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(sep.clone());
         spans.push(Span::styled(datetime, Style::default().fg(Color::Green)));
 
-        // Separator and counts
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
-
-        // Abbreviated counts: "0 Pend │ 0 Run │ 4 Done │ 0 Fail"
+        // Status counts (abbreviated)
+        let counts = state.job_counts();
+        spans.push(sep.clone());
         spans.push(Span::styled(
             format!("{} Pend", counts.pending + counts.queued),
             Style::default().fg(Color::White),
         ));
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(sep.clone());
         spans.push(Span::styled(
             format!("{} Run", counts.running),
             Style::default().fg(Color::Yellow),
         ));
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(sep.clone());
         spans.push(Span::styled(
             format!("{} Done", counts.completed),
             Style::default().fg(Color::Green),
         ));
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(sep);
         spans.push(Span::styled(
             format!("{} Fail", counts.failed),
             Style::default().fg(if counts.failed > 0 {
@@ -108,9 +106,7 @@ impl Header {
         ));
 
         let content = Line::from(spans);
-
         let block = Block::default().borders(Borders::ALL);
-
         let paragraph = Paragraph::new(content).block(block);
 
         frame.render_widget(paragraph, area);

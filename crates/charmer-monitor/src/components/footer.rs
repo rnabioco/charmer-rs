@@ -1,4 +1,4 @@
-//! Footer component with keyboard shortcuts.
+//! Footer component with keyboard shortcuts and status messages.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -18,7 +18,7 @@ impl Footer {
         let help = "j/k:navigate  l:logs  r:rules  f:filter  s:sort  ?:help  q:quit";
         let version = format!("v{}", VERSION);
 
-        // Split footer into left (help or status) and right (version)
+        // Split footer into left (help/status), right (version)
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -27,10 +27,10 @@ impl Footer {
             ])
             .split(area);
 
-        // Show status message if provided, otherwise show help
+        // Show status message if present, otherwise show help
         let left_content = if let Some(msg) = status_message {
             Line::from(Span::styled(
-                msg,
+                msg.to_string(),
                 Style::default()
                     .fg(Color::Magenta)
                     .add_modifier(Modifier::BOLD),
@@ -39,8 +39,8 @@ impl Footer {
             Line::from(Span::styled(help, Style::default().fg(Color::Gray)))
         };
 
-        let left_paragraph = Paragraph::new(left_content);
-        frame.render_widget(left_paragraph, chunks[0]);
+        let help_paragraph = Paragraph::new(left_content);
+        frame.render_widget(help_paragraph, chunks[0]);
 
         let version_paragraph = Paragraph::new(Line::from(Span::styled(
             version,
