@@ -21,6 +21,9 @@ docs/assets/*.gif
 docs/assets/*.webm
 docs/assets/*.mp4
 
+# External dependencies
+ext/
+
 # IDE
 .idea/
 .vscode/
