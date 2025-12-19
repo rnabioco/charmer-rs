@@ -1,0 +1,62 @@
+# Sample configuration for cluster test pipeline
+# 12 samples: 8 successful + 4 designed to fail at different stages
+
+samples:
+  # Control group - 4 samples
+  ctrl-rep1:
+    group: control
+    replicate: 1
+
+  ctrl-rep2:
+    group: control
+    replicate: 2
+
+  ctrl-rep3:
+    group: control
+    replicate: 3
+
+  ctrl-rep4:
+    group: control
+    replicate: 4
+
+  # Treatment group - 4 samples
+  treat-rep1:
+    group: treatment
+    replicate: 1
+
+  treat-rep2:
+    group: treatment
+    replicate: 2
+
+  treat-rep3:
+    group: treatment
+    replicate: 3
+
+  treat-rep4:
+    group: treatment
+    replicate: 4
+
+  # Samples designed to FAIL with different errors
+  fail-oom:
+    group: failure
+    replicate: 1
+    fail_at: align           # Fails during alignment
+    exit_code: 137           # OOM kill signal
+
+  fail-timeout:
+    group: failure
+    replicate: 2
+    fail_at: call_variants   # Fails during variant calling
+    exit_code: 124           # Timeout signal
+
+  fail-error:
+    group: failure
+    replicate: 3
+    fail_at: process         # Fails during initial processing
+    exit_code: 1             # Generic error
+
+  fail-segfault:
+    group: failure
+    replicate: 4
+    fail_at: merge           # Fails during merge
+    exit_code: 139           # Segfault signal

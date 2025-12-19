@@ -1,0 +1,48 @@
+# Snakemake LSF Executor Profile Configuration
+# =============================================
+# This profile configures Snakemake to submit jobs to LSF clusters
+# Usage: snakemake --profile cluster/lsf
+
+# Executor settings
+executor: lsf
+jobs: 50                       # Maximum concurrent jobs
+latency-wait: 15               # Wait time for output files (seconds)
+
+# Default resources for all rules
+default-resources:
+  - "runtime=30"
+  - "mem_mb=4000"
+  - "lsf_queue=rna"
+  - "lsf_project=charmer-test"
+  - 'lsf_extra=""'
+
+# Rule-specific resource overrides
+set-resources:
+  - process_sample:runtime=10
+  - process_sample:mem_mb=2000
+
+  - align_sample:runtime=15
+  - align_sample:mem_mb=4000
+
+  - call_variants:runtime=20
+  - call_variants:mem_mb=4000
+
+  - merge_sample_variants:runtime=10
+  - merge_sample_variants:mem_mb=2000
+
+  - group_analysis:runtime=15
+  - group_analysis:mem_mb=4000
+
+  - final_merge:runtime=10
+  - final_merge:mem_mb=2000
+
+  - generate_report:runtime=5
+  - generate_report:mem_mb=1000
+
+# Behavior settings
+rerun-incomplete: true
+keep-going: true
+
+# Output settings
+printshellcmds: true
+show-failed-logs: true
