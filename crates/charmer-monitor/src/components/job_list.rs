@@ -39,8 +39,16 @@ impl JobList {
         state: &PipelineState,
         filtered_job_ids: &[String],
         selected: Option<usize>,
+        filter_label: &str,
+        sort_label: &str,
     ) {
         let counts = state.job_counts();
+
+        // Count visible jobs excluding MAIN_PIPELINE_JOB_ID
+        let visible = filtered_job_ids
+            .iter()
+            .filter(|id| *id != MAIN_PIPELINE_JOB_ID)
+            .count();
 
         // Split area: progress bar on top, column headers, list below
         let chunks = Layout::default()
@@ -52,13 +60,15 @@ impl JobList {
             ])
             .split(area);
 
-        // Render progress header
+        // Render progress header with filter/sort in title
         render_progress_header(
             frame,
             chunks[0],
             &counts,
-            filtered_job_ids.len(),
+            visible,
             state.total_jobs,
+            filter_label,
+            sort_label,
         );
 
         // Calculate available width for content (minus borders)
@@ -79,10 +89,20 @@ impl JobList {
         render_column_headers(frame, chunks[1], &opts);
 
         // Build job list items with responsive columns
+        // Track display row separately to exclude MAIN_PIPELINE_JOB_ID from numbering
+        let mut display_row = 0usize;
         let items: Vec<ListItem> = filtered_job_ids
             .iter()
             .enumerate()
-            .map(|(i, job_id)| build_job_item(i, job_id, state, &counts, selected, &opts))
+            .map(|(i, job_id)| {
+                let row_num = if job_id == MAIN_PIPELINE_JOB_ID {
+                    0
+                } else {
+                    display_row += 1;
+                    display_row
+                };
+                build_job_item(row_num, i, job_id, state, &counts, selected, &opts)
+            })
             .collect();
 
         let list = List::new(items)
@@ -97,6 +117,7 @@ impl JobList {
 
 /// Build a single job list item with responsive columns.
 fn build_job_item(
+    row_num: usize,
     index: usize,
     job_id: &str,
     state: &PipelineState,
@@ -155,12 +176,12 @@ fn build_job_item(
     } else {
         Style::default().fg(Color::Gray)
     };
-    spans.push(Span::styled(format!("{:3} ", index), row_style));
+    spans.push(Span::styled(format!("{:3} ", row_num), row_style));
 
     // Status symbol (highlighted when selected)
-    // Use 🎯 for target rules (like "all"), otherwise use status symbol
+    // Use ◎ for target rules (like "all"), otherwise use status symbol
     let status_symbol = if job.is_target {
-        "🎯"
+        "◎"
     } else {
         job.status.symbol()
     };
@@ -463,56 +484,70 @@ fn render_progress_header(
     counts: &JobCounts,
     visible: usize,
     total_jobs: Option<usize>,
+    filter_label: &str,
+    sort_label: &str,
 ) {
     // Prefer total_jobs from snakemake log (more accurate) over counted jobs
     let total = total_jobs.unwrap_or(counts.total);
 
-    // Calculate progress percentage
-    let progress = if total > 0 {
-        (counts.completed as f64 / total as f64 * 100.0).min(100.0) as u16
+    // Build the title line with counts, filter, and sort
+    let title = format!(
+        " Jobs ({}/{}) │ Filter: {} │ Sort: {} ",
+        visible, total, filter_label, sort_label
+    );
+
+    // Create progress bar with [▮▮▮▮────](n/m) style
+    // Leave room for the count suffix like "(27/28)"
+    let count_suffix = format!("({}/{})", visible, total);
+    let bar_width = (area.width.saturating_sub(4) as usize) // borders + padding
+        .saturating_sub(count_suffix.len() + 3); // brackets + space
+    let filled = if total > 0 {
+        (bar_width as f64 * visible as f64 / total as f64) as usize
     } else {
         0
     };
 
-    // Build the title line with counts
-    let title = format!(" Jobs ({}/{}) ", visible, total);
+    // Build the progress bar with Unicode characters
+    let bar_filled: String = "▮".repeat(filled.min(bar_width));
+    let bar_empty: String = "─".repeat(bar_width.saturating_sub(filled));
 
-    // Create a background progress bar effect
-    let bar_width = area.width.saturating_sub(2) as usize; // Account for borders
-    let filled = (bar_width as f64 * counts.completed as f64 / total.max(1) as f64) as usize;
-
-    // Build the progress bar as a styled line
-    let bar_filled: String = "█".repeat(filled.min(bar_width));
-    let bar_empty: String = "░".repeat(bar_width.saturating_sub(filled));
-
-    // Status summary line
+    // Status summary line with bold text
+    let bold = Modifier::BOLD;
     let status_line = Line::from(vec![
         Span::styled(
-            format!("{}R ", counts.running),
+            format!("{} Run", counts.running),
+            Style::default().fg(Color::Yellow).add_modifier(bold),
+        ),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{} Done", counts.completed),
+            Style::default().fg(Color::Green).add_modifier(bold),
+        ),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{} Fail", counts.failed),
             Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+                .fg(if counts.failed > 0 {
+                    Color::Red
+                } else {
+                    Color::DarkGray
+                })
+                .add_modifier(bold),
         ),
+        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}C ", counts.completed),
-            Style::default().fg(Color::Green),
-        ),
-        Span::styled(
-            format!("{}F ", counts.failed),
-            Style::default().fg(if counts.failed > 0 {
-                Color::Red
-            } else {
-                Color::DarkGray
-            }),
-        ),
-        Span::styled(
-            format!("{}Q", counts.queued + counts.pending),
-            Style::default().fg(Color::Blue),
+            format!("{} Pend", counts.queued + counts.pending),
+            Style::default().fg(Color::Blue).add_modifier(bold),
         ),
         Span::raw("  "),
+        Span::styled("[", Style::default().fg(Color::White).add_modifier(bold)),
         Span::styled(bar_filled, Style::default().fg(Color::Green)),
         Span::styled(bar_empty, Style::default().fg(Color::DarkGray)),
-        Span::styled(format!(" {}%", progress), Style::default().fg(Color::White)),
+        Span::styled("]", Style::default().fg(Color::White).add_modifier(bold)),
+        Span::styled(
+            count_suffix,
+            Style::default().fg(Color::White).add_modifier(bold),
+        ),
     ]);
 
     let block = Block::default()

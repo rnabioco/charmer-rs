@@ -606,8 +606,7 @@ impl App {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Header with progress
-                    Constraint::Length(1),  // Status counts
+                    Constraint::Length(3),  // Header (bordered)
                     Constraint::Min(8),     // Main content (smaller when logs open)
                     Constraint::Length(12), // Log panel
                     Constraint::Length(1),  // Footer
@@ -617,8 +616,7 @@ impl App {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3), // Header with progress
-                    Constraint::Length(1), // Status counts
+                    Constraint::Length(3), // Header (bordered)
                     Constraint::Min(10),   // Main content
                     Constraint::Length(0), // No log panel
                     Constraint::Length(1), // Footer
@@ -629,14 +627,11 @@ impl App {
         // Header
         Header::render(frame, chunks[0], &self.state);
 
-        // Status counts
-        self.render_status_bar(frame, chunks[1]);
-
         // Main content: split horizontally
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(chunks[2]);
+            .split(chunks[1]);
 
         // Render based on view mode
         match self.view_mode {
@@ -648,6 +643,8 @@ impl App {
                     &self.state,
                     &self.job_ids,
                     Some(self.selected_index),
+                    self.filter_mode.label(),
+                    self.sort_mode.label(),
                 );
 
                 // Render job detail or pipeline summary
@@ -681,11 +678,18 @@ impl App {
 
         // Log panel at bottom (if open)
         if self.show_log_viewer {
-            self.render_log_panel(frame, chunks[3]);
+            self.render_log_panel(frame, chunks[2]);
         }
 
-        // Footer
-        Footer::render(frame, chunks[4]);
+        // Footer with status message
+        let status_msg = self.status_message.as_ref().and_then(|(msg, timestamp)| {
+            if timestamp.elapsed() < Duration::from_secs(3) {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        });
+        Footer::render(frame, chunks[3], status_msg);
 
         // Help overlay (on top of everything)
         if self.show_help {
@@ -835,56 +839,6 @@ impl App {
                 .borders(Borders::ALL)
                 .title(" Rule Details "),
         );
-        frame.render_widget(paragraph, area);
-    }
-
-    fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
-        use ratatui::style::{Color, Modifier, Style};
-        use ratatui::text::{Line, Span};
-        use ratatui::widgets::Paragraph;
-
-        let counts = self.state.job_counts();
-
-        let mut spans = vec![
-            Span::styled(
-                format!(" {} Pending ", counts.pending + counts.queued),
-                Style::default().fg(Color::White),
-            ),
-            Span::raw("│"),
-            Span::styled(
-                format!(" {} Running ", counts.running),
-                Style::default().fg(Color::Yellow),
-            ),
-            Span::raw("│"),
-            Span::styled(
-                format!(" {} Done ", counts.completed),
-                Style::default().fg(Color::Green),
-            ),
-            Span::raw("│"),
-            Span::styled(
-                format!(" {} Failed ", counts.failed),
-                Style::default().fg(Color::Red),
-            ),
-            Span::raw(" │ Filter: "),
-            Span::styled(self.filter_mode.label(), Style::default().fg(Color::Cyan)),
-            Span::raw(" │ Sort: "),
-            Span::styled(self.sort_mode.label(), Style::default().fg(Color::Cyan)),
-        ];
-
-        // Show status message if recent (within 3 seconds)
-        if let Some((ref msg, timestamp)) = self.status_message {
-            if timestamp.elapsed() < Duration::from_secs(3) {
-                spans.push(Span::raw(" │ "));
-                spans.push(Span::styled(
-                    msg.clone(),
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-        }
-
-        let paragraph = Paragraph::new(Line::from(spans));
         frame.render_widget(paragraph, area);
     }
 

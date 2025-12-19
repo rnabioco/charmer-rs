@@ -650,6 +650,24 @@ impl PipelineState {
                     }
                 }
             }
+
+            // Also update any regular jobs for this target rule (they have no outputs)
+            if let Some(job_ids) = self.jobs_by_rule.get(rule).cloned() {
+                for job_id in job_ids {
+                    if let Some(job) = self.jobs.get_mut(&job_id) {
+                        if job.outputs.is_empty() {
+                            job.is_target = true;
+                            job.status = if info.finished && self.pipeline_errors.is_empty() {
+                                JobStatus::Completed
+                            } else if info.finished {
+                                JobStatus::Failed
+                            } else {
+                                JobStatus::Pending
+                            };
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -2,7 +2,7 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -14,11 +14,11 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct Footer;
 
 impl Footer {
-    pub fn render(frame: &mut Frame, area: Rect) {
+    pub fn render(frame: &mut Frame, area: Rect, status_message: Option<&str>) {
         let help = "j/k:navigate  l:logs  r:rules  f:filter  s:sort  ?:help  q:quit";
         let version = format!("v{}", VERSION);
 
-        // Split footer into left (help) and right (version)
+        // Split footer into left (help or status) and right (version)
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -27,8 +27,20 @@ impl Footer {
             ])
             .split(area);
 
-        let help_paragraph = Paragraph::new(help).style(Style::default().fg(Color::Gray));
-        frame.render_widget(help_paragraph, chunks[0]);
+        // Show status message if provided, otherwise show help
+        let left_content = if let Some(msg) = status_message {
+            Line::from(Span::styled(
+                msg,
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ))
+        } else {
+            Line::from(Span::styled(help, Style::default().fg(Color::Gray)))
+        };
+
+        let left_paragraph = Paragraph::new(left_content);
+        frame.render_widget(left_paragraph, chunks[0]);
 
         let version_paragraph = Paragraph::new(Line::from(Span::styled(
             version,
