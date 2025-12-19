@@ -10,7 +10,7 @@ pub struct ViewTabs;
 
 impl ViewTabs {
     /// Generate a title Line with inline tab selection.
-    /// Returns something like: " [Jobs] Rules "
+    /// Returns something like: " \[Jobs\] Rules "
     pub fn title_line(view_mode: ViewMode) -> Line<'static> {
         let tabs = [("Jobs", ViewMode::Jobs), ("Rules", ViewMode::Rules)];
 

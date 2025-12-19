@@ -87,7 +87,7 @@ fn compute_dependencies(
         return relations;
     }
 
-    if state.jobs.get(selected_id).is_none() {
+    if !state.jobs.contains_key(selected_id) {
         return relations;
     }
 
@@ -188,6 +188,7 @@ fn compute_dependencies(
         let max_idx = chain_indices[chain_indices.len() - 1];
 
         // Mark positions for all rows in the range
+        #[allow(clippy::needless_range_loop)]
         for idx in min_idx..=max_idx {
             if relations[idx].0 != DepRelation::None {
                 // This is an actual chain member
@@ -324,6 +325,7 @@ impl JobList {
 }
 
 /// Build a single job list item with responsive columns.
+#[allow(clippy::too_many_arguments)]
 fn build_job_item(
     row_num: usize,
     list_index: usize,
@@ -438,7 +440,7 @@ fn build_job_item(
         for (i, value) in wildcards.iter().enumerate() {
             if i > 0 {
                 // Add pipe separator
-                if total_len + 1 <= max_len {
+                if total_len < max_len {
                     wildcard_spans.push(Span::styled("|", sep_style));
                     total_len += 1;
                 } else {
