@@ -1,0 +1,27 @@
+# Pipeline configuration for cluster test pipeline
+
+project: "charmer-test"
+samples_file: "config/samples.yaml"
+output_dir: "results"
+
+# Chromosomes for variant calling (creates fan-out)
+chromosomes:
+  - chr1
+  - chr2
+  - chr3
+  - chr4
+
+# Groups for analysis
+groups:
+  - control
+  - treatment
+
+# Job timing (seconds) - short for testing
+delays:
+  process: 30
+  align: 60
+  variants: 45
+  merge: 20
+  group_analysis: 30
+  final_merge: 15
+  report: 10
