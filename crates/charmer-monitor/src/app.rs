@@ -1,7 +1,7 @@
 //! Main TUI application.
 
 use crate::components::{
-    Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
+    Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary, ViewTabs,
 };
 use crate::ui::Theme;
 use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
@@ -633,13 +633,22 @@ impl App {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(chunks[1]);
 
+        // Split left panel to add tabs at top
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(2), Constraint::Min(1)])
+            .split(main_chunks[0]);
+
+        // Render view tabs
+        ViewTabs::render(frame, left_chunks[0], self.view_mode);
+
         // Render based on view mode
         match self.view_mode {
             ViewMode::Jobs => {
                 // Job list (left) and detail (right)
                 JobList::render(
                     frame,
-                    main_chunks[0],
+                    left_chunks[1],
                     &self.state,
                     &self.job_ids,
                     Some(self.selected_index),
@@ -663,7 +672,7 @@ impl App {
                 // Rule summary table (full width of left panel)
                 RuleSummary::render(
                     frame,
-                    main_chunks[0],
+                    left_chunks[1],
                     &self.state,
                     &self.rule_names,
                     Some(self.selected_index),

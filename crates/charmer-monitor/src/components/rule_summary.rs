@@ -201,7 +201,11 @@ impl RuleSummary {
             ],
         )
         .header(header)
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .block(
+            Block::default()
+                .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT) // No top - tabs have it
+                .title(title),
+        )
         .row_highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
         let mut table_state = TableState::default();

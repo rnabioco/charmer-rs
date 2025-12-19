@@ -553,8 +553,9 @@ fn render_progress_header(
         ),
     ]);
 
+    // No top border - tabs have it
     let block = Block::default()
-        .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+        .borders(Borders::LEFT | Borders::RIGHT)
         .title(title)
         .title_style(
             Style::default()
