@@ -12,6 +12,12 @@ impl ViewTabs {
     /// Generate a title Line with inline tab selection.
     /// Returns something like: " \[Jobs\] Rules "
     pub fn title_line(view_mode: ViewMode) -> Line<'static> {
+        Self::title_line_styled(view_mode, false)
+    }
+
+    /// Generate a title Line with inline tab selection and active styling.
+    /// When is_active is true, uses yellow highlight colors.
+    pub fn title_line_styled(view_mode: ViewMode, is_active: bool) -> Line<'static> {
         let tabs = [("Jobs", ViewMode::Jobs), ("Rules", ViewMode::Rules)];
 
         let mut spans = Vec::new();
@@ -24,11 +30,10 @@ impl ViewTabs {
 
             if *mode == view_mode {
                 // Selected tab - bold and highlighted
+                let color = if is_active { Color::Yellow } else { Color::White };
                 spans.push(Span::styled(
                     format!("[{}]", name),
-                    Style::default()
-                        .fg(Color::White)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
                 ));
             } else {
                 // Unselected tab - dimmed

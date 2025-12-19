@@ -75,6 +75,16 @@ pub enum ViewMode {
     Rules,
 }
 
+/// Active panel for keyboard focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivePanel {
+    /// Job list or rule list (left panel)
+    #[default]
+    List,
+    /// Log viewer panel (bottom)
+    Logs,
+}
+
 impl SortMode {
     pub fn next(self) -> Self {
         match self {
@@ -101,6 +111,7 @@ pub struct App {
     pub filter_mode: FilterMode,
     pub sort_mode: SortMode,
     pub view_mode: ViewMode,
+    pub active_panel: ActivePanel,
     pub show_help: bool,
     pub show_log_viewer: bool,
     pub log_viewer_state: Option<LogViewerState>,
@@ -110,6 +121,7 @@ pub struct App {
     rule_names: Vec<String>,                   // Cached rule names for rule view
     status_message: Option<(String, Instant)>, // Temporary status message with timestamp
     command_expanded: bool,                    // Whether command section is expanded in details
+    waiting_for_panel_key: bool, // True when Ctrl-W was pressed, waiting for direction
 }
 
 impl App {
@@ -123,6 +135,7 @@ impl App {
             filter_mode: FilterMode::default(),
             sort_mode: SortMode::default(),
             view_mode: ViewMode::default(),
+            active_panel: ActivePanel::default(),
             show_help: false,
             show_log_viewer: false,
             log_viewer_state: None,
@@ -132,6 +145,7 @@ impl App {
             rule_names,
             status_message: None,
             command_expanded: false,
+            waiting_for_panel_key: false,
         };
         // Update job list first to ensure MAIN_PIPELINE_JOB_ID is in the list
         app.update_job_list();
@@ -544,6 +558,44 @@ impl App {
         }
     }
 
+    /// Scroll log viewer page up.
+    fn scroll_log_page_up(&mut self) {
+        if let Some(ref mut state) = self.log_viewer_state {
+            for _ in 0..10 {
+                state.scroll_up();
+            }
+        }
+    }
+
+    /// Scroll log viewer page down.
+    fn scroll_log_page_down(&mut self) {
+        if let Some(ref mut state) = self.log_viewer_state {
+            for _ in 0..10 {
+                state.scroll_down();
+            }
+        }
+    }
+
+    /// Switch to the next panel (cycles through available panels).
+    fn switch_panel_down(&mut self) {
+        if self.show_log_viewer {
+            self.active_panel = match self.active_panel {
+                ActivePanel::List => ActivePanel::Logs,
+                ActivePanel::Logs => ActivePanel::List,
+            };
+        }
+    }
+
+    /// Switch to the previous panel (cycles through available panels).
+    fn switch_panel_up(&mut self) {
+        if self.show_log_viewer {
+            self.active_panel = match self.active_panel {
+                ActivePanel::List => ActivePanel::Logs,
+                ActivePanel::Logs => ActivePanel::List,
+            };
+        }
+    }
+
     /// Handle a key event.
     pub fn handle_key(&mut self, key: KeyEvent) {
         // If help is showing, any key closes it
@@ -552,38 +604,118 @@ impl App {
             return;
         }
 
+        // Handle Ctrl-W panel switching (vim-style)
+        if self.waiting_for_panel_key {
+            self.waiting_for_panel_key = false;
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => self.switch_panel_down(),
+                KeyCode::Char('k') | KeyCode::Up => self.switch_panel_up(),
+                KeyCode::Char('w') => {
+                    // Ctrl-W w cycles to next panel
+                    self.switch_panel_down();
+                }
+                _ => {} // Ignore other keys after Ctrl-W
+            }
+            return;
+        }
+
+        // Check for Ctrl-W to start panel switching
+        if key.code == KeyCode::Char('w') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.waiting_for_panel_key = true;
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => self.quit(),
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
             KeyCode::Char('j') | KeyCode::Down => {
-                self.select_next();
-                // Update log viewer to show new job's logs
-                if self.show_log_viewer {
-                    self.update_log_viewer_for_selected();
+                match self.active_panel {
+                    ActivePanel::List => {
+                        self.select_next();
+                        // Update log viewer to show new job's logs
+                        if self.show_log_viewer {
+                            self.update_log_viewer_for_selected();
+                        }
+                    }
+                    ActivePanel::Logs => {
+                        // Scroll down in log viewer
+                        if let Some(ref mut state) = self.log_viewer_state {
+                            state.scroll_down();
+                        }
+                    }
                 }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.select_previous();
-                // Update log viewer to show new job's logs
-                if self.show_log_viewer {
-                    self.update_log_viewer_for_selected();
+                match self.active_panel {
+                    ActivePanel::List => {
+                        self.select_previous();
+                        // Update log viewer to show new job's logs
+                        if self.show_log_viewer {
+                            self.update_log_viewer_for_selected();
+                        }
+                    }
+                    ActivePanel::Logs => {
+                        // Scroll up in log viewer
+                        if let Some(ref mut state) = self.log_viewer_state {
+                            state.scroll_up();
+                        }
+                    }
                 }
             }
-            KeyCode::Char('g') | KeyCode::Home => self.select_first(),
-            KeyCode::Char('G') | KeyCode::End => self.select_last(),
-            KeyCode::Char('f') => self.cycle_filter(),
-            KeyCode::Char('s') => self.cycle_sort(),
-            KeyCode::Char('r') => self.toggle_view_mode(),
-            KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
-            KeyCode::Char('F') if self.show_log_viewer => {
-                // Toggle follow mode when log panel is open
+            KeyCode::Char('g') | KeyCode::Home => match self.active_panel {
+                ActivePanel::List => self.select_first(),
+                ActivePanel::Logs => {
+                    if let Some(ref mut state) = self.log_viewer_state {
+                        state.scroll_to_top();
+                    }
+                }
+            },
+            KeyCode::Char('G') | KeyCode::End => match self.active_panel {
+                ActivePanel::List => self.select_last(),
+                ActivePanel::Logs => {
+                    if let Some(ref mut state) = self.log_viewer_state {
+                        state.scroll_to_bottom();
+                    }
+                }
+            },
+            // Panel-specific keys
+            KeyCode::Char('f') if self.active_panel == ActivePanel::List => self.cycle_filter(),
+            KeyCode::Char('s') if self.active_panel == ActivePanel::List => self.cycle_sort(),
+            KeyCode::Char('t') if self.active_panel == ActivePanel::Logs => {
+                // Toggle tail/follow mode when logs panel is active
                 if let Some(ref mut state) = self.log_viewer_state {
                     state.toggle_follow();
                 }
             }
+            // Page scrolling in logs (Ctrl-B/F or PageUp/PageDown)
+            KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.active_panel == ActivePanel::Logs {
+                    self.scroll_log_page_up();
+                }
+            }
+            KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                if self.active_panel == ActivePanel::Logs {
+                    self.scroll_log_page_down();
+                }
+            }
+            KeyCode::PageUp if self.active_panel == ActivePanel::Logs => {
+                self.scroll_log_page_up();
+            }
+            KeyCode::PageDown if self.active_panel == ActivePanel::Logs => {
+                self.scroll_log_page_down();
+            }
+            // Global keys
+            KeyCode::Char('r') => self.toggle_view_mode(),
+            KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
             KeyCode::Char('?') => self.toggle_help(),
-            KeyCode::Char('c') => self.copy_command(),
-            KeyCode::Char('e') => self.command_expanded = !self.command_expanded,
+            KeyCode::Char('c') if self.active_panel == ActivePanel::List => self.copy_command(),
+            KeyCode::Char('e') if self.active_panel == ActivePanel::List => {
+                self.command_expanded = !self.command_expanded
+            }
+            KeyCode::Tab => {
+                // Tab switches panels
+                self.switch_panel_down();
+            }
             _ => {}
         }
     }
@@ -601,17 +733,30 @@ impl App {
 
     /// Render the UI.
     pub fn render(&self, frame: &mut Frame) {
+        let area = frame.area();
+
         // Adjust layout based on whether log panel is open
         let chunks = if self.show_log_viewer {
+            // When logs are open:
+            // - Main content (job list) caps at 45 lines (~40 jobs + headers)
+            // - Log panel fills remaining space (minimum 12 lines)
+            // Calculate heights: total = header(3) + main + logs + footer(1)
+            let fixed_height = 3 + 1; // header + footer
+            let available = area.height.saturating_sub(fixed_height as u16);
+
+            // Cap main content at 45, give rest to logs (min 12)
+            let main_height = available.saturating_sub(12).min(45);
+            let log_height = available.saturating_sub(main_height);
+
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Header (1 line + borders)
-                    Constraint::Min(8),     // Main content (smaller when logs open)
-                    Constraint::Length(12), // Log panel
-                    Constraint::Length(1),  // Footer
+                    Constraint::Length(3),           // Header
+                    Constraint::Length(main_height), // Main content (capped)
+                    Constraint::Length(log_height),  // Log panel (fills rest)
+                    Constraint::Length(1),           // Footer
                 ])
-                .split(frame.area())
+                .split(area)
         } else {
             Layout::default()
                 .direction(Direction::Vertical)
@@ -621,7 +766,7 @@ impl App {
                     Constraint::Length(0), // No log panel
                     Constraint::Length(1), // Footer
                 ])
-                .split(frame.area())
+                .split(area)
         };
 
         // Header
@@ -637,6 +782,7 @@ impl App {
         match self.view_mode {
             ViewMode::Jobs => {
                 // Job list (left) and detail (right)
+                let is_list_active = self.active_panel == ActivePanel::List;
                 JobList::render(
                     frame,
                     main_chunks[0],
@@ -645,6 +791,7 @@ impl App {
                     Some(self.selected_index),
                     self.filter_mode.label(),
                     self.sort_mode.label(),
+                    is_list_active,
                 );
 
                 // Render job detail or pipeline summary
@@ -900,7 +1047,8 @@ impl App {
     fn render_log_panel(&self, frame: &mut Frame, area: Rect) {
         if let Some(ref state) = self.log_viewer_state {
             // Render log viewer as a bottom panel (tailed output)
-            LogViewer::render_panel(frame, area, state);
+            let is_active = self.active_panel == ActivePanel::Logs;
+            LogViewer::render_panel(frame, area, state, is_active);
         }
     }
 
@@ -914,19 +1062,28 @@ impl App {
   Keyboard Shortcuts
   ──────────────────
 
-  j / ↓      Move down (also updates log panel)
-  k / ↑      Move up (also updates log panel)
-  g / Home   Go to first item
-  G / End    Go to last item
-  r          Toggle view (Jobs/Rules summary)
-  d          Toggle DAG view
-  f          Cycle filter (All/Running/Failed/Pending/Completed)
-  s          Cycle sort (Status/Rule/Time)
-  l / Enter  Toggle log panel
-  F          Toggle follow mode (when logs open)
-  c          Copy command to clipboard
+  Panel Switching
+  Tab        Switch active panel
+  Ctrl-W j/k Switch to panel below/above
+
+  Jobs Panel (when active)
+  j/k / ↑↓   Navigate jobs
+  g / G      Go to first/last job
+  f          Cycle filter
+  s          Cycle sort
+  c          Copy command
   e          Expand/collapse command
-  ?          Toggle this help
+
+  Logs Panel (when active)
+  j/k / ↑↓   Scroll line by line
+  Ctrl-B/F   Page up/down
+  g / G      Go to top/bottom
+  t          Toggle tail mode
+
+  Global
+  r          Toggle view (Jobs/Rules)
+  l / Enter  Toggle log panel
+  ?          This help
   q / Ctrl+C Quit
 
   Press any key to close

@@ -224,38 +224,62 @@ impl JobList {
         selected: Option<usize>,
         filter_label: &str,
         sort_label: &str,
+        is_active: bool,
     ) {
         let counts = state.job_counts();
 
-        // Calculate visible job count (exclude main pipeline pseudo-job)
-        let visible = filtered_job_ids
-            .iter()
-            .filter(|id| id.as_str() != MAIN_PIPELINE_JOB_ID)
-            .count();
+        // Build the outer block with tabs and active indicator
+        let border_style = if is_active {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
 
-        // Split area: progress bar on top, column headers, list below
+        // Tabs title on left
+        let tabs_title = ViewTabs::title_line_styled(ViewMode::Jobs, is_active);
+
+        // Active indicator on right
+        let active_indicator = if is_active { " [active] " } else { "" };
+        let active_style = if is_active {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+
+        let outer_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .title(tabs_title)
+            .title_top(Line::from(Span::styled(active_indicator, active_style)).right_aligned());
+
+        let inner_area = outer_block.inner(area);
+        frame.render_widget(outer_block, area);
+
+        // Split inner area: gap, progress bar, column headers, list
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(2), // Progress header
+                Constraint::Length(1), // Gap after title
+                Constraint::Length(1), // Progress content
                 Constraint::Length(1), // Column headers
                 Constraint::Min(1),    // Job list
             ])
-            .split(area);
+            .split(inner_area);
 
-        // Render progress header
-        render_progress_header(
+        // Render progress content (filter/sort/gauge)
+        render_progress_content(
             frame,
-            chunks[0],
+            chunks[1],
             &counts,
-            visible,
             state.total_jobs,
             filter_label,
             sort_label,
         );
 
-        // Calculate available width for content (minus borders)
-        let content_width = chunks[1].width.saturating_sub(2);
+        // Calculate available width for content
+        let content_width = chunks[2].width;
 
         // Determine which columns to show based on width
         let opts = DisplayOptions {
@@ -265,7 +289,7 @@ impl JobList {
         };
 
         // Render column headers
-        render_column_headers(frame, chunks[1], &opts);
+        render_column_headers(frame, chunks[2], &opts);
 
         // Compute dependency relationships for visual indicator
         let deps = compute_dependencies(state, filtered_job_ids, selected);
@@ -290,16 +314,15 @@ impl JobList {
             })
             .collect();
 
-        let list = List::new(items)
-            .block(Block::default().borders(Borders::LEFT | Borders::RIGHT | Borders::BOTTOM));
+        let list = List::new(items);
 
         let mut list_state = ListState::default();
         list_state.select(selected);
 
-        frame.render_stateful_widget(list, chunks[2], &mut list_state);
+        frame.render_stateful_widget(list, chunks[3], &mut list_state);
 
         // Render scrollbar if there are more items than visible
-        let list_height = chunks[2].height.saturating_sub(2) as usize; // minus borders
+        let list_height = chunks[3].height as usize;
         if filtered_job_ids.len() > list_height {
             let mut scrollbar_state = ScrollbarState::new(filtered_job_ids.len())
                 .position(selected.unwrap_or(0))
@@ -311,12 +334,12 @@ impl JobList {
                 .track_symbol(Some("│"))
                 .thumb_symbol("█");
 
-            // Use full panel area with 2-space inset from top and bottom
+            // Position scrollbar in the list area
             let scrollbar_area = Rect {
-                x: area.x,
-                y: area.y + 2,
-                width: area.width,
-                height: area.height.saturating_sub(4), // 2 top + 2 bottom
+                x: inner_area.x,
+                y: chunks[3].y,
+                width: inner_area.width,
+                height: chunks[3].height,
             };
 
             frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
@@ -780,18 +803,16 @@ fn render_column_headers(frame: &mut Frame, area: Rect, opts: &DisplayOptions) {
     spans.push(Span::raw("   "));
 
     let header_line = Line::from(spans);
-    let paragraph =
-        Paragraph::new(header_line).block(Block::default().borders(Borders::LEFT | Borders::RIGHT));
+    let paragraph = Paragraph::new(header_line);
 
     frame.render_widget(paragraph, area);
 }
 
-/// Render a progress header with inline progress bar.
-fn render_progress_header(
+/// Render the progress bar section (filter/sort/gauge) without borders.
+fn render_progress_content(
     frame: &mut Frame,
     area: Rect,
     counts: &JobCounts,
-    _visible: usize,
     total_jobs: Option<usize>,
     filter_label: &str,
     sort_label: &str,
@@ -799,32 +820,20 @@ fn render_progress_header(
     // Prefer total_jobs from snakemake log (more accurate) over counted jobs
     let total = total_jobs.unwrap_or(counts.total);
 
-    // Use tabs as title
-    let tabs_title = ViewTabs::title_line(ViewMode::Jobs);
-
-    let block = Block::default()
-        .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
-        .title(tabs_title);
-
-    // Calculate inner area for the gauge layout
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
     // Layout: Filter/Sort | Gauge | (count)
-    // Calculate width for filter/sort section
-    let filter_sort_width = 8 + filter_label.len() + 7 + sort_label.len() + 2; // "Filter:" + label + " Sort:" + label + padding
+    let filter_sort_width = 8 + filter_label.len() + 7 + sort_label.len() + 2;
     let count_text = format!("({}/{})", counts.completed, total);
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(filter_sort_width as u16), // Filter/Sort with padding
-            Constraint::Min(1),                           // Gauge fills remaining
-            Constraint::Length(count_text.len() as u16 + 1), // +1 for padding
+            Constraint::Length(filter_sort_width as u16),
+            Constraint::Min(1),
+            Constraint::Length(count_text.len() as u16 + 1),
         ])
-        .split(inner);
+        .split(area);
 
-    // Filter/Sort label on left with colored values
+    // Filter/Sort label on left
     let filter_sort = Paragraph::new(Line::from(vec![
         Span::styled(" Filter:", Style::default().fg(Color::DarkGray)),
         Span::styled(filter_label, Style::default().fg(Color::Cyan)),
