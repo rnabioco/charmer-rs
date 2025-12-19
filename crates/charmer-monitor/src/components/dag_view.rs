@@ -1,17 +1,14 @@
-//! DAG (Directed Acyclic Graph) visualization component using Canvas widget.
+//! DAG (Directed Acyclic Graph) visualization component.
 //!
-//! Builds a real dependency graph from job inputs/outputs and renders it
-//! using a layered layout algorithm.
+//! Renders a clean ASCII box diagram of rule dependencies using Unicode
+//! box-drawing characters.
 
 use charmer_state::{JobStatus, PipelineState};
 use ratatui::{
     layout::Rect,
-    style::Color,
-    symbols,
-    widgets::{
-        canvas::{Canvas, Circle, Line as CanvasLine},
-        Block, Borders,
-    },
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 use std::collections::{HashMap, HashSet};
@@ -19,7 +16,6 @@ use std::collections::{HashMap, HashSet};
 pub struct DagView;
 
 /// Node in the DAG representing a rule
-#[derive(Debug)]
 struct RuleNode {
     name: String,
     layer: usize,
@@ -27,13 +23,41 @@ struct RuleNode {
     running: usize,
     failed: usize,
     pending: usize,
-    total: usize,
+}
+
+impl RuleNode {
+    fn total(&self) -> usize {
+        self.completed + self.running + self.failed + self.pending
+    }
+
+    fn status_color(&self) -> Color {
+        if self.failed > 0 {
+            Color::Red
+        } else if self.running > 0 {
+            Color::Yellow
+        } else if self.completed == self.total() && self.total() > 0 {
+            Color::Green
+        } else {
+            Color::Blue
+        }
+    }
+
+    fn status_char(&self) -> &'static str {
+        if self.failed > 0 {
+            "✗"
+        } else if self.running > 0 {
+            "▶"
+        } else if self.completed == self.total() && self.total() > 0 {
+            "✓"
+        } else {
+            "○"
+        }
+    }
 }
 
 impl DagView {
     /// Build dependency edges between rules based on job inputs/outputs.
     fn build_rule_dependencies(state: &PipelineState) -> HashMap<String, HashSet<String>> {
-        // Map output files to the rule that produces them
         let mut output_to_rule: HashMap<&str, &str> = HashMap::new();
         for job in state.jobs.values() {
             if job.is_target {
@@ -44,7 +68,6 @@ impl DagView {
             }
         }
 
-        // For each rule, find which rules it depends on (via inputs)
         let mut rule_deps: HashMap<String, HashSet<String>> = HashMap::new();
         for job in state.jobs.values() {
             if job.is_target {
@@ -63,8 +86,7 @@ impl DagView {
         rule_deps
     }
 
-    /// Assign layers to rules using topological sort (Kahn's algorithm).
-    /// Rules with no dependencies are layer 0, their dependents are layer 1, etc.
+    /// Assign layers using topological sort.
     fn assign_layers(
         rules: &[String],
         deps: &HashMap<String, HashSet<String>>,
@@ -72,20 +94,8 @@ impl DagView {
         let mut layers: HashMap<String, usize> = HashMap::new();
         let mut remaining: HashSet<&str> = rules.iter().map(|s| s.as_str()).collect();
 
-        // Build reverse dependency map (rule -> rules that depend on it)
-        let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
-        for rule in rules {
-            dependents.entry(rule.as_str()).or_default();
-            if let Some(rule_deps) = deps.get(rule) {
-                for dep in rule_deps {
-                    dependents.entry(dep.as_str()).or_default().push(rule.as_str());
-                }
-            }
-        }
-
         let mut current_layer = 0;
         while !remaining.is_empty() {
-            // Find all rules whose dependencies are all assigned
             let ready: Vec<&str> = remaining
                 .iter()
                 .filter(|&&rule| {
@@ -97,7 +107,6 @@ impl DagView {
                 .collect();
 
             if ready.is_empty() {
-                // Cycle detected or remaining rules have unmet deps - assign to current layer
                 for rule in remaining.iter() {
                     layers.insert(rule.to_string(), current_layer);
                 }
@@ -114,9 +123,202 @@ impl DagView {
         layers
     }
 
-    /// Render the DAG visualization showing rule dependencies.
+    /// Generate Mermaid-style flowchart as ASCII.
+    fn generate_ascii_dag(
+        nodes: &[RuleNode],
+        deps: &HashMap<String, HashSet<String>>,
+        max_layer: usize,
+        width: usize,
+    ) -> Vec<Line<'static>> {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+
+        // Group nodes by layer
+        let mut layers: Vec<Vec<&RuleNode>> = vec![Vec::new(); max_layer + 1];
+        for node in nodes {
+            layers[node.layer].push(node);
+        }
+
+        // Calculate box width based on longest rule name
+        let max_name_len = nodes.iter().map(|n| n.name.len()).max().unwrap_or(8);
+        let box_width = (max_name_len + 4).min(20); // padding + borders, max 20
+
+        // Build reverse deps for drawing arrows
+        let mut reverse_deps: HashMap<&str, Vec<&str>> = HashMap::new();
+        for (rule, rule_deps) in deps {
+            for dep in rule_deps {
+                reverse_deps
+                    .entry(dep.as_str())
+                    .or_default()
+                    .push(rule.as_str());
+            }
+        }
+
+        // Render each layer
+        for (layer_idx, layer_nodes) in layers.iter().enumerate() {
+            if layer_nodes.is_empty() {
+                continue;
+            }
+
+            // Sort nodes in layer by name for consistency
+            let mut sorted_nodes: Vec<&RuleNode> = layer_nodes.clone();
+            sorted_nodes.sort_by(|a, b| a.name.cmp(&b.name));
+
+            // Calculate spacing
+            let num_nodes = sorted_nodes.len();
+            let total_box_width = box_width * num_nodes + (num_nodes.saturating_sub(1)) * 3;
+            let left_pad = if total_box_width < width {
+                (width - total_box_width) / 2
+            } else {
+                1
+            };
+
+            // Top border line
+            let mut top_spans: Vec<Span> = vec![Span::raw(" ".repeat(left_pad))];
+            for (i, node) in sorted_nodes.iter().enumerate() {
+                if i > 0 {
+                    top_spans.push(Span::raw("   ")); // spacing between boxes
+                }
+                top_spans.push(Span::styled(
+                    format!("┌{}┐", "─".repeat(box_width - 2)),
+                    Style::default().fg(node.status_color()),
+                ));
+            }
+            lines.push(Line::from(top_spans));
+
+            // Content line with rule name
+            let mut content_spans: Vec<Span> = vec![Span::raw(" ".repeat(left_pad))];
+            for (i, node) in sorted_nodes.iter().enumerate() {
+                if i > 0 {
+                    content_spans.push(Span::raw("───")); // horizontal connector
+                }
+                let name = if node.name.len() > box_width - 4 {
+                    format!("{}…", &node.name[..box_width - 5])
+                } else {
+                    node.name.clone()
+                };
+                let padding = box_width - 4 - name.len();
+                let left = padding / 2;
+                let right = padding - left;
+                content_spans.push(Span::styled(
+                    format!(
+                        "│{}{}{}{}│",
+                        node.status_char(),
+                        " ".repeat(left),
+                        name,
+                        " ".repeat(right)
+                    ),
+                    Style::default()
+                        .fg(node.status_color())
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+            lines.push(Line::from(content_spans));
+
+            // Stats line
+            let mut stats_spans: Vec<Span> = vec![Span::raw(" ".repeat(left_pad))];
+            for (i, node) in sorted_nodes.iter().enumerate() {
+                if i > 0 {
+                    stats_spans.push(Span::raw("   "));
+                }
+                let stats = format!(
+                    "{}/{}",
+                    node.completed + node.running,
+                    node.total()
+                );
+                let padding = box_width - 2 - stats.len();
+                let left = padding / 2;
+                let right = padding - left;
+                stats_spans.push(Span::styled(
+                    format!("│{}{}{}│", " ".repeat(left), stats, " ".repeat(right)),
+                    Style::default().fg(node.status_color()),
+                ));
+            }
+            lines.push(Line::from(stats_spans));
+
+            // Bottom border line
+            let mut bottom_spans: Vec<Span> = vec![Span::raw(" ".repeat(left_pad))];
+            for (i, node) in sorted_nodes.iter().enumerate() {
+                if i > 0 {
+                    bottom_spans.push(Span::raw("   "));
+                }
+                bottom_spans.push(Span::styled(
+                    format!("└{}┘", "─".repeat(box_width - 2)),
+                    Style::default().fg(node.status_color()),
+                ));
+            }
+            lines.push(Line::from(bottom_spans));
+
+            // Draw arrows to next layer if not last
+            if layer_idx < layers.len() - 1 && !layers[layer_idx + 1].is_empty() {
+                // Find which nodes connect to next layer
+                let mut arrow_positions: Vec<(usize, bool)> = Vec::new();
+                for (i, node) in sorted_nodes.iter().enumerate() {
+                    let has_downstream = reverse_deps
+                        .get(node.name.as_str())
+                        .map(|d| !d.is_empty())
+                        .unwrap_or(false);
+                    arrow_positions.push((i, has_downstream));
+                }
+
+                // Arrow line
+                let mut arrow_spans: Vec<Span> = vec![Span::raw(" ".repeat(left_pad))];
+                for (i, (_, has_arrow)) in arrow_positions.iter().enumerate() {
+                    if i > 0 {
+                        arrow_spans.push(Span::raw("   "));
+                    }
+                    let center_pad = (box_width - 1) / 2;
+                    if *has_arrow {
+                        arrow_spans.push(Span::styled(
+                            format!("{}│{}", " ".repeat(center_pad), " ".repeat(box_width - 1 - center_pad)),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    } else {
+                        arrow_spans.push(Span::raw(" ".repeat(box_width)));
+                    }
+                }
+                lines.push(Line::from(arrow_spans));
+
+                // Arrow head line
+                let mut head_spans: Vec<Span> = vec![Span::raw(" ".repeat(left_pad))];
+                for (i, (_, has_arrow)) in arrow_positions.iter().enumerate() {
+                    if i > 0 {
+                        head_spans.push(Span::raw("   "));
+                    }
+                    let center_pad = (box_width - 1) / 2;
+                    if *has_arrow {
+                        head_spans.push(Span::styled(
+                            format!("{}▼{}", " ".repeat(center_pad), " ".repeat(box_width - 1 - center_pad)),
+                            Style::default().fg(Color::DarkGray),
+                        ));
+                    } else {
+                        head_spans.push(Span::raw(" ".repeat(box_width)));
+                    }
+                }
+                lines.push(Line::from(head_spans));
+
+                lines.push(Line::from("")); // blank line between layers
+            }
+        }
+
+        // Add legend
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(" ✓ ", Style::default().fg(Color::Green)),
+            Span::raw("done  "),
+            Span::styled(" ▶ ", Style::default().fg(Color::Yellow)),
+            Span::raw("running  "),
+            Span::styled(" ✗ ", Style::default().fg(Color::Red)),
+            Span::raw("failed  "),
+            Span::styled(" ○ ", Style::default().fg(Color::Blue)),
+            Span::raw("pending"),
+        ]));
+
+        lines
+    }
+
+    /// Render the DAG visualization.
     pub fn render(frame: &mut Frame, area: Rect, state: &PipelineState) {
-        // Group jobs by rule and collect stats
+        // Collect rule stats
         let mut rule_stats: HashMap<String, (usize, usize, usize, usize)> = HashMap::new();
 
         for job in state.jobs.values() {
@@ -137,150 +339,52 @@ impl DagView {
         let num_rules = rules.len();
 
         if num_rules == 0 {
-            let empty = Canvas::default()
+            let empty = Paragraph::new("No jobs yet")
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(" DAG View - No jobs yet "),
-                )
-                .x_bounds([0.0, 100.0])
-                .y_bounds([0.0, 100.0])
-                .marker(symbols::Marker::Braille)
-                .paint(|_ctx| {});
+                        .title(" DAG View "),
+                );
             frame.render_widget(empty, area);
             return;
         }
 
-        // Build dependency graph and assign layers
+        // Build graph
         let deps = Self::build_rule_dependencies(state);
         let layers = Self::assign_layers(&rules, &deps);
-
-        // Build nodes with positions
         let max_layer = layers.values().copied().max().unwrap_or(0);
-        let mut nodes: Vec<RuleNode> = Vec::new();
 
-        for rule in &rules {
-            let (completed, running, failed, pending) = rule_stats.get(rule).copied().unwrap_or_default();
-            nodes.push(RuleNode {
-                name: rule.clone(),
-                layer: *layers.get(rule).unwrap_or(&0),
-                completed,
-                running,
-                failed,
-                pending,
-                total: completed + running + failed + pending,
-            });
-        }
-
-        // Sort nodes by layer, then by name for consistent positioning
+        // Build nodes
+        let mut nodes: Vec<RuleNode> = rules
+            .iter()
+            .map(|rule| {
+                let (completed, running, failed, pending) =
+                    rule_stats.get(rule).copied().unwrap_or_default();
+                RuleNode {
+                    name: rule.clone(),
+                    layer: *layers.get(rule).unwrap_or(&0),
+                    completed,
+                    running,
+                    failed,
+                    pending,
+                }
+            })
+            .collect();
         nodes.sort_by(|a, b| a.layer.cmp(&b.layer).then(a.name.cmp(&b.name)));
 
-        // Count nodes per layer for positioning
-        let mut layer_counts: HashMap<usize, usize> = HashMap::new();
-        let mut layer_indices: HashMap<usize, usize> = HashMap::new();
-        for node in &nodes {
-            *layer_counts.entry(node.layer).or_default() += 1;
-        }
+        // Generate ASCII
+        let content_width = area.width.saturating_sub(2) as usize;
+        let ascii_lines = Self::generate_ascii_dag(&nodes, &deps, max_layer, content_width);
 
-        // Calculate positions
-        let mut node_positions: HashMap<String, (f64, f64)> = HashMap::new();
-        let padding = 8.0;
-        let usable_width = 100.0 - 2.0 * padding;
-        let usable_height = 100.0 - 2.0 * padding;
-
-        for node in &nodes {
-            let layer_count = layer_counts[&node.layer];
-            let idx = layer_indices.entry(node.layer).or_default();
-
-            // X position based on layer (left to right)
-            let x = if max_layer == 0 {
-                50.0
-            } else {
-                padding + (node.layer as f64 / max_layer as f64) * usable_width
-            };
-
-            // Y position based on index within layer (top to bottom, centered)
-            let y = if layer_count == 1 {
-                50.0
-            } else {
-                let spacing = usable_height / (layer_count as f64 + 1.0);
-                padding + spacing * (*idx as f64 + 1.0)
-            };
-
-            node_positions.insert(node.name.clone(), (x, y));
-            *idx += 1;
-        }
-
-        // Render the canvas
-        let title = format!(
-            " DAG View - {} rules, {} layers ",
-            num_rules,
-            max_layer + 1
-        );
-
-        let canvas = Canvas::default()
+        let paragraph = Paragraph::new(ascii_lines)
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(title)
-                    .title_bottom(" Press 'd' to return │ ← upstream │ → downstream "),
+                    .title(format!(" DAG View - {} rules ", num_rules))
+                    .title_bottom(" Press 'd' to return "),
             )
-            .x_bounds([0.0, 100.0])
-            .y_bounds([0.0, 100.0])
-            .marker(symbols::Marker::Braille)
-            .paint(move |ctx| {
-                // Draw edges first (so nodes are on top)
-                for (rule, rule_deps) in &deps {
-                    if let Some(&(x2, y2)) = node_positions.get(rule) {
-                        for dep in rule_deps {
-                            if let Some(&(x1, y1)) = node_positions.get(dep) {
-                                ctx.draw(&CanvasLine {
-                                    x1,
-                                    y1,
-                                    x2,
-                                    y2,
-                                    color: Color::DarkGray,
-                                });
-                            }
-                        }
-                    }
-                }
+            .wrap(Wrap { trim: false });
 
-                // Draw nodes
-                for node in &nodes {
-                    if let Some(&(x, y)) = node_positions.get(&node.name) {
-                        // Choose color based on status
-                        let color = if node.failed > 0 {
-                            Color::Red
-                        } else if node.running > 0 {
-                            Color::Yellow
-                        } else if node.completed == node.total && node.total > 0 {
-                            Color::Green
-                        } else {
-                            Color::Blue
-                        };
-
-                        // Node size based on job count (clamped)
-                        let radius = 2.0 + (node.total as f64).sqrt().min(3.0);
-
-                        ctx.draw(&Circle {
-                            x,
-                            y,
-                            radius,
-                            color,
-                        });
-
-                        // Draw rule name label
-                        let label = if node.name.len() > 12 {
-                            format!("{}…", &node.name[..11])
-                        } else {
-                            node.name.clone()
-                        };
-                        ctx.print(x, y - radius - 2.0, label);
-                    }
-                }
-            });
-
-        frame.render_widget(canvas, area);
+        frame.render_widget(paragraph, area);
     }
 }
