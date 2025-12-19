@@ -1,4 +1,4 @@
-# charmer
+# charmer-rs
 
 A terminal user interface (TUI) for monitoring Snakemake pipelines on HPC clusters.
 
