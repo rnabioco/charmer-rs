@@ -1,4 +1,4 @@
-# Quick Start
+# Usage
 
 ## Basic Usage
 
@@ -9,7 +9,7 @@ cd /path/to/my/pipeline
 charmer
 ```
 
-The TUI will launch and display any jobs found in the `.snakemake/metadata/` directory and from scheduler queries.
+The TUI will display jobs from `.snakemake/metadata/` and scheduler queries.
 
 ## Running Alongside Snakemake
 
@@ -25,9 +25,9 @@ In another terminal, start charmer:
 charmer
 ```
 
-Charmer will automatically detect new jobs as Snakemake submits them.
+Charmer automatically detects new jobs as Snakemake submits them.
 
-## Navigating the Interface
+## Interface
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -54,46 +54,43 @@ Charmer will automatically detect new jobs as Snakemake submits them.
 
 | Symbol | Status |
 |--------|--------|
-| `○` | Pending (waiting for dependencies) |
-| `◐` | Queued (submitted to scheduler) |
+| `○` | Pending |
+| `◐` | Queued |
 | `●` | Running |
 | `✓` | Completed |
 | `✗` | Failed |
 | `⊘` | Cancelled |
 
-### Keyboard Shortcuts
+## Keyboard Shortcuts
+
+### Navigation
 
 | Key | Action |
 |-----|--------|
-| `j` / `↓` | Move selection down |
-| `k` / `↑` | Move selection up |
-| `g` | Go to first job |
-| `G` | Go to last job |
-| `f` | Cycle filter mode |
-| `s` | Cycle sort mode |
-| `?` | Show help |
-| `q` | Quit |
+| `j` / `↓` | Move down |
+| `k` / `↑` | Move up |
+| `g` / `Home` | Go to first job |
+| `G` / `End` | Go to last job |
 
-## Filtering Jobs
+### Filtering & Sorting
 
-Press `f` to cycle through filter modes:
+| Key | Action |
+|-----|--------|
+| `f` | Cycle filter (All → Running → Failed → Pending → Completed) |
+| `s` | Cycle sort (Status → Rule → Time) |
 
-- **All** - Show all jobs
-- **Running** - Only running jobs
-- **Failed** - Only failed jobs
-- **Pending** - Pending and queued jobs
-- **Completed** - Successfully completed jobs
+### Log Viewer
 
-## Sorting Jobs
+| Key | Action |
+|-----|--------|
+| `l` / `Enter` | Open log viewer |
+| `F` | Toggle follow mode |
+| `q` / `Escape` | Close log viewer |
 
-Press `s` to cycle through sort modes:
+### General
 
-- **Status** - Running first, then failed, queued, pending, completed
-- **Rule** - Alphabetically by rule name
-- **Time** - Most recently started first
-
-## Next Steps
-
-- [Configuration Options](../guide/configuration.md)
-- [SLURM Integration](../guide/slurm.md)
-- [LSF Integration](../guide/lsf.md)
+| Key | Action |
+|-----|--------|
+| `?` | Toggle help |
+| `r` | Force refresh |
+| `q` / `Ctrl+C` | Quit |
