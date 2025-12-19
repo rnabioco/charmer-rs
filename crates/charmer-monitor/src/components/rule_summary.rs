@@ -202,12 +202,8 @@ impl RuleSummary {
                 .borders(Borders::ALL)
                 .title(title),
         )
-        // Softer highlight - bold with subtle background instead of full reverse
-        .row_highlight_style(
-            Style::default()
-                .add_modifier(Modifier::BOLD)
-                .bg(Color::DarkGray),
-        );
+        // Text emphasis only, no background - matches job list
+        .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
         let mut table_state = TableState::default();
         table_state.select(selected);

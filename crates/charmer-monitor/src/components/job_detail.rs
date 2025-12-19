@@ -10,6 +10,16 @@ use ratatui::{
     Frame,
 };
 
+/// Color palette for wildcard values (matches job_list.rs).
+const WILDCARD_COLORS: [Color; 6] = [
+    Color::Cyan,
+    Color::Magenta,
+    Color::Yellow,
+    Color::Green,
+    Color::Blue,
+    Color::Red,
+];
+
 pub struct JobDetail;
 
 impl JobDetail {
@@ -23,7 +33,7 @@ impl JobDetail {
         };
 
         let paragraph = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title(" Details "));
+            .block(Block::default().borders(Borders::ALL).title(" Job Details "));
 
         frame.render_widget(paragraph, area);
     }
@@ -33,7 +43,7 @@ impl JobDetail {
         let content = build_pipeline_lines(state);
 
         let paragraph = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title(" Pipeline "));
+            .block(Block::default().borders(Borders::ALL).title(" Job Details "));
 
         frame.render_widget(paragraph, area);
     }
@@ -237,12 +247,35 @@ fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
         ),
     ]));
 
-    // Wildcards / Sample info
+    // Wildcards / Sample info - colored to match job list
     if let Some(ref wildcards) = job.wildcards {
-        lines.push(Line::from(vec![
-            Span::styled("Wildcards: ", Style::default().fg(Color::Gray)),
-            Span::styled(wildcards.clone(), Style::default().fg(Color::Yellow)),
-        ]));
+        let mut spans = vec![Span::styled("Wildcards: ", Style::default().fg(Color::Gray))];
+
+        // Parse and color each wildcard: key in white, value in color
+        let pairs: Vec<(&str, &str)> = wildcards
+            .split(',')
+            .filter_map(|part| {
+                part.trim()
+                    .split_once('=')
+                    .map(|(k, v)| (k.trim(), v.trim()))
+            })
+            .collect();
+
+        for (i, (key, value)) in pairs.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::styled(", ", Style::default().fg(Color::DarkGray)));
+            }
+            // Key in white
+            spans.push(Span::styled(
+                format!("{}=", key),
+                Style::default().fg(Color::White),
+            ));
+            // Value in color
+            let color = WILDCARD_COLORS[i % WILDCARD_COLORS.len()];
+            spans.push(Span::styled(value.to_string(), Style::default().fg(color)));
+        }
+
+        lines.push(Line::from(spans));
     } else {
         // Try to extract sample from output path
         if let Some(sample) =
