@@ -2,8 +2,8 @@
 
 use crate::types::{SlurmJob, SlurmJobState};
 use charmer_parsers::{
-    non_empty_string, parse_duration, parse_exit_code, parse_memory_mb, parse_slurm_timestamp,
-    run_command, split_delimited, MemoryFormat,
+    non_empty_string, parse_duration, parse_duration_secs, parse_exit_code, parse_memory_mb,
+    parse_slurm_timestamp, run_command, split_delimited, MemoryFormat,
 };
 use chrono::{DateTime, Utc};
 use std::time::Duration;
@@ -118,40 +118,14 @@ pub async fn query_resource_usage(job_id: &str) -> Result<Option<SlurmResourceUs
     }))
 }
 
-/// Parse elapsed time string (HH:MM:SS or D-HH:MM:SS) to seconds.
+/// Parse elapsed time string, stripping any milliseconds before parsing.
 fn parse_elapsed_time(s: &str) -> Option<u64> {
     if s.is_empty() || s == "Unknown" {
         return None;
     }
-
-    // Handle D-HH:MM:SS format
-    let (days, time_part) = if s.contains('-') {
-        let parts: Vec<&str> = s.splitn(2, '-').collect();
-        let days: u64 = parts[0].parse().ok()?;
-        (days, parts.get(1).copied().unwrap_or("0:0:0"))
-    } else {
-        (0, s)
-    };
-
-    // Handle HH:MM:SS or MM:SS or SS.mmm
-    let time_part = time_part.split('.').next().unwrap_or(time_part); // Remove milliseconds
-    let time_parts: Vec<&str> = time_part.split(':').collect();
-    let (hours, mins, secs) = match time_parts.len() {
-        3 => (
-            time_parts[0].parse::<u64>().ok()?,
-            time_parts[1].parse::<u64>().ok()?,
-            time_parts[2].parse::<u64>().ok()?,
-        ),
-        2 => (
-            0,
-            time_parts[0].parse::<u64>().ok()?,
-            time_parts[1].parse::<u64>().ok()?,
-        ),
-        1 => (0, 0, time_parts[0].parse::<u64>().ok()?),
-        _ => return None,
-    };
-
-    Some(days * 86400 + hours * 3600 + mins * 60 + secs)
+    // Strip milliseconds (e.g., "01:30:00.123" -> "01:30:00")
+    let clean = s.split('.').next().unwrap_or(s);
+    parse_duration_secs(clean)
 }
 
 /// Query job history with sacct.
@@ -188,7 +162,7 @@ pub async fn query_sacct(
         }
         match parse_sacct_line(line) {
             Ok(job) => jobs.push(job),
-            Err(e) => eprintln!("Warning: {}", e),
+            Err(e) => tracing::warn!("Failed to parse sacct line: {}", e),
         }
     }
 

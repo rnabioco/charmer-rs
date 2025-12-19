@@ -87,6 +87,51 @@ pub fn parse_exit_code(s: &str) -> i32 {
         .unwrap_or(0)
 }
 
+/// Parse duration to seconds from various formats.
+///
+/// Like `parse_duration` but returns seconds as u64 instead of Duration.
+pub fn parse_duration_secs(s: &str) -> Option<u64> {
+    parse_duration(s).map(|d| d.as_secs())
+}
+
+/// Format seconds as human-readable duration (e.g., "1d 02:30:00", "01:30:00", "05:30").
+pub fn format_duration(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let mins = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+
+    if hours > 24 {
+        let days = hours / 24;
+        let hours = hours % 24;
+        format!("{}d {:02}:{:02}:{:02}", days, hours, mins, secs)
+    } else if hours > 0 {
+        format!("{:02}:{:02}:{:02}", hours, mins, secs)
+    } else {
+        format!("{:02}:{:02}", mins, secs)
+    }
+}
+
+/// Format seconds as LSF duration format (HH:MM for resource limits).
+pub fn format_duration_lsf(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let mins = (seconds % 3600) / 60;
+    format!("{}:{:02}", hours, mins)
+}
+
+/// Format seconds as SLURM duration format (D-HH:MM:SS).
+pub fn format_duration_slurm(seconds: u64) -> String {
+    let days = seconds / 86400;
+    let hours = (seconds % 86400) / 3600;
+    let mins = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+
+    if days > 0 {
+        format!("{}-{:02}:{:02}:{:02}", days, hours, mins, secs)
+    } else {
+        format!("{:02}:{:02}:{:02}", hours, mins, secs)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

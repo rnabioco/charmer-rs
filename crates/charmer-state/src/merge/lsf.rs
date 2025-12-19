@@ -45,7 +45,7 @@ pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: 
         // Check if job already exists
         if let Some(existing) = state.jobs.get_mut(&job_id) {
             // Update with LSF data
-            existing.slurm_job_id = Some(lsf_job.job_id.clone()); // Reuse field for LSF job ID
+            existing.scheduler_job_id = Some(lsf_job.job_id.clone());
             existing.status = status;
             existing.resources = resources;
             existing.error = error;
@@ -66,7 +66,7 @@ pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: 
                 outputs: vec![],
                 inputs: vec![],
                 status,
-                slurm_job_id: Some(lsf_job.job_id.clone()), // Reuse for LSF job ID
+                scheduler_job_id: Some(lsf_job.job_id.clone()),
                 shellcmd: String::new(),
                 timing,
                 resources,

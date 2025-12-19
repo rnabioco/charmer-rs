@@ -87,7 +87,7 @@ pub async fn query_bjobs(job_name_filter: Option<&str>) -> Result<Vec<LsfJob>, B
         }
         match parse_bjobs_line(line) {
             Ok(job) => jobs.push(job),
-            Err(e) => eprintln!("Warning: {}", e),
+            Err(e) => tracing::warn!("Failed to parse bjobs line: {}", e),
         }
     }
 

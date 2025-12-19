@@ -175,7 +175,7 @@ async fn run_app(
                         }
                     }
                     WatcherEvent::Error(err) => {
-                        eprintln!("File watcher error: {}", err);
+                        tracing::error!("File watcher error: {}", err);
                     }
                 }
             }

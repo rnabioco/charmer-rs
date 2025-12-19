@@ -138,7 +138,7 @@ pub fn scan_metadata_dir(working_dir: &Utf8Path) -> Result<Vec<SnakemakeJob>, Me
             Ok(job) => jobs.push(job),
             Err(e) => {
                 // Log but continue on parse errors
-                eprintln!("Warning: Failed to parse metadata file {}: {}", path, e);
+                tracing::warn!("Failed to parse metadata file {}: {}", path, e);
             }
         }
     }

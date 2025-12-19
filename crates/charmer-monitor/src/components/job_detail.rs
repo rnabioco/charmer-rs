@@ -319,8 +319,8 @@ fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
         ),
     ]));
 
-    // SLURM/LSF Job ID
-    if let Some(ref slurm_id) = job.slurm_job_id {
+    // Scheduler Job ID (SLURM/LSF)
+    if let Some(ref slurm_id) = job.scheduler_job_id {
         lines.push(Line::from(vec![
             Span::styled("Job ID: ", Style::default().fg(Color::Gray)),
             Span::styled(slurm_id.clone(), Style::default().fg(Color::Cyan)),

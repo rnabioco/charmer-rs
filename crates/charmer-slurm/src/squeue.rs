@@ -96,7 +96,7 @@ pub async fn query_squeue(run_uuid: Option<&str>) -> Result<Vec<SlurmJob>, Squeu
         }
         match parse_squeue_line(line) {
             Ok(job) => jobs.push(job),
-            Err(e) => eprintln!("Warning: {}", e),
+            Err(e) => tracing::warn!("Failed to parse squeue line: {}", e),
         }
     }
 

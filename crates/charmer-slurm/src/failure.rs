@@ -2,7 +2,10 @@
 //!
 //! Query detailed failure information and provide actionable suggestions.
 
-use charmer_parsers::{parse_memory_mb, run_command_allow_failure, MemoryFormat};
+use charmer_parsers::{
+    format_duration, format_duration_slurm, parse_duration_secs, parse_memory_mb,
+    run_command_allow_failure, MemoryFormat,
+};
 use thiserror::Error;
 use tokio::process::Command;
 
@@ -217,8 +220,8 @@ fn parse_failure_line(job_id: &str, line: &str) -> Result<FailureAnalysis, Failu
     let req_mem_mb = parse_memory_mb(req_mem_str, MemoryFormat::SlurmSacct);
 
     // Parse time values
-    let elapsed_seconds = parse_elapsed(elapsed_str);
-    let time_limit_seconds = parse_elapsed(time_limit_str);
+    let elapsed_seconds = parse_duration_secs(elapsed_str);
+    let time_limit_seconds = parse_duration_secs(time_limit_str);
 
     // Determine failure mode
     let base_state = raw_state.split_whitespace().next().unwrap_or(&raw_state);
@@ -304,95 +307,14 @@ fn parse_exit_code_signal(s: &str) -> (i32, Option<i32>) {
     (code, signal)
 }
 
-/// Parse elapsed time string (HH:MM:SS or D-HH:MM:SS) to seconds.
-fn parse_elapsed(s: &str) -> Option<u64> {
-    if s.is_empty() || s == "Unknown" {
-        return None;
-    }
-
-    // Handle D-HH:MM:SS format
-    let (days, time_part) = if s.contains('-') {
-        let parts: Vec<&str> = s.splitn(2, '-').collect();
-        let days: u64 = parts[0].parse().ok()?;
-        (days, parts.get(1).copied().unwrap_or("0:0:0"))
-    } else {
-        (0, s)
-    };
-
-    // Handle HH:MM:SS or MM:SS
-    let time_parts: Vec<&str> = time_part.split(':').collect();
-    let (hours, mins, secs) = match time_parts.len() {
-        3 => (
-            time_parts[0].parse::<u64>().ok()?,
-            time_parts[1].parse::<u64>().ok()?,
-            time_parts[2].parse::<u64>().ok()?,
-        ),
-        2 => (
-            0,
-            time_parts[0].parse::<u64>().ok()?,
-            time_parts[1].parse::<u64>().ok()?,
-        ),
-        1 => (0, 0, time_parts[0].parse::<u64>().ok()?),
-        _ => return None,
-    };
-
-    Some(days * 86400 + hours * 3600 + mins * 60 + secs)
-}
-
-/// Format seconds as human-readable duration.
-fn format_duration(seconds: u64) -> String {
-    let hours = seconds / 3600;
-    let mins = (seconds % 3600) / 60;
-    let secs = seconds % 60;
-
-    if hours > 24 {
-        let days = hours / 24;
-        let hours = hours % 24;
-        format!("{}d {:02}:{:02}:{:02}", days, hours, mins, secs)
-    } else if hours > 0 {
-        format!("{:02}:{:02}:{:02}", hours, mins, secs)
-    } else {
-        format!("{:02}:{:02}", mins, secs)
-    }
-}
-
-/// Format seconds as SLURM duration format (D-HH:MM:SS).
-fn format_duration_slurm(seconds: u64) -> String {
-    let days = seconds / 86400;
-    let hours = (seconds % 86400) / 3600;
-    let mins = (seconds % 3600) / 60;
-    let secs = seconds % 60;
-
-    if days > 0 {
-        format!("{}-{:02}:{:02}:{:02}", days, hours, mins, secs)
-    } else {
-        format!("{:02}:{:02}:{:02}", hours, mins, secs)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_elapsed() {
-        assert_eq!(parse_elapsed("00:05:30"), Some(330));
-        assert_eq!(parse_elapsed("01:30:00"), Some(5400));
-        assert_eq!(parse_elapsed("1-12:00:00"), Some(129600));
-        assert_eq!(parse_elapsed("30"), Some(30));
-    }
 
     #[test]
     fn test_parse_exit_code_signal() {
         assert_eq!(parse_exit_code_signal("0:0"), (0, None));
         assert_eq!(parse_exit_code_signal("1:0"), (1, None));
         assert_eq!(parse_exit_code_signal("137:9"), (137, Some(9)));
-    }
-
-    #[test]
-    fn test_format_duration() {
-        assert_eq!(format_duration(330), "05:30");
-        assert_eq!(format_duration(3661), "01:01:01");
-        assert_eq!(format_duration(90061), "1d 01:01:01");
     }
 }

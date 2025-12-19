@@ -2,7 +2,10 @@
 //!
 //! Query detailed failure information and provide actionable suggestions.
 
-use charmer_parsers::run_command_allow_failure;
+use charmer_parsers::{
+    format_duration, format_duration_lsf, parse_duration_secs, parse_memory_mb,
+    run_command_allow_failure, MemoryFormat,
+};
 use thiserror::Error;
 use tokio::process::Command;
 
@@ -193,19 +196,19 @@ fn parse_bhist_output(job_id: &str, output: &str) -> Result<FailureAnalysis, Fai
 
         // Look for memory info
         if line.contains("MAX MEM:") {
-            max_mem_mb = parse_lsf_memory(line, "MAX MEM:");
+            max_mem_mb = parse_lsf_memory_from_line(line, "MAX MEM:");
         }
         if line.contains("MEMLIMIT") || line.contains("MEM LIMIT:") {
-            mem_limit_mb =
-                parse_lsf_memory(line, "MEMLIMIT").or_else(|| parse_lsf_memory(line, "MEM LIMIT:"));
+            mem_limit_mb = parse_lsf_memory_from_line(line, "MEMLIMIT")
+                .or_else(|| parse_lsf_memory_from_line(line, "MEM LIMIT:"));
         }
 
         // Look for runtime info
         if line.contains("Run time:") || line.contains("RUN_TIME:") {
-            run_time_seconds = parse_lsf_time(line);
+            run_time_seconds = parse_lsf_time_from_line(line);
         }
         if line.contains("RUNLIMIT") || line.contains("RUN LIMIT:") {
-            run_limit_seconds = parse_lsf_time(line);
+            run_limit_seconds = parse_lsf_time_from_line(line);
         }
     }
 
@@ -285,78 +288,40 @@ fn extract_number(s: &str, prefix: &str) -> Option<u64> {
     }
 }
 
-/// Parse LSF memory value (e.g., "4.5 Gbytes", "1024 Mbytes").
-fn parse_lsf_memory(line: &str, prefix: &str) -> Option<u64> {
+/// Parse LSF memory value from a line with a prefix (e.g., "MAX MEM: 4.5 Gbytes").
+fn parse_lsf_memory_from_line(line: &str, prefix: &str) -> Option<u64> {
     if let Some(idx) = line.find(prefix) {
-        let after = &line[idx + prefix.len()..];
-        // Find the number
-        let parts: Vec<&str> = after.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let value: f64 = parts[0].parse().ok()?;
-            let unit = parts[1].to_lowercase();
-            return Some(if unit.starts_with('g') {
-                (value * 1024.0) as u64
-            } else if unit.starts_with('m') {
-                value as u64
-            } else if unit.starts_with('k') {
-                (value / 1024.0) as u64
-            } else {
-                value as u64
-            });
-        }
+        let after = &line[idx + prefix.len()..].trim();
+        // Extract just "4.5 Gbytes" part for the shared parser
+        let mem_str: String = after
+            .split_whitespace()
+            .take(2)
+            .collect::<Vec<_>>()
+            .join(" ");
+        parse_memory_mb(&mem_str, MemoryFormat::Lsf)
+    } else {
+        None
     }
-    None
 }
 
-/// Parse LSF time value (e.g., "01:30:00", "1800 seconds").
-fn parse_lsf_time(line: &str) -> Option<u64> {
-    // Look for HH:MM:SS pattern
+/// Parse LSF time value from a line (e.g., "Run time: 01:30:00").
+fn parse_lsf_time_from_line(line: &str) -> Option<u64> {
+    // Look for HH:MM:SS pattern in the line
     for word in line.split_whitespace() {
-        if word.contains(':') {
-            let parts: Vec<&str> = word.split(':').collect();
-            if parts.len() == 3 {
-                let hours: u64 = parts[0].parse().ok()?;
-                let mins: u64 = parts[1].parse().ok()?;
-                let secs: u64 = parts[2].parse().ok()?;
-                return Some(hours * 3600 + mins * 60 + secs);
-            }
+        if word.contains(':') && word.chars().filter(|c| *c == ':').count() == 2 {
+            return parse_duration_secs(word);
         }
     }
     // Look for "N seconds" pattern
     if let Some(idx) = line.find("seconds") {
         let before = line[..idx].trim();
-        // Get the last number token before "seconds"
         if let Some(num_str) = before.split_whitespace().last() {
-            if let Ok(secs) = num_str.parse::<f64>() {
-                return Some(secs as u64);
+            if let Ok(secs) = num_str.parse::<u64>() {
+                return Some(secs);
             }
         }
     }
     None
-}
-
-/// Format seconds as human-readable duration.
-fn format_duration(seconds: u64) -> String {
-    let hours = seconds / 3600;
-    let mins = (seconds % 3600) / 60;
-    let secs = seconds % 60;
-
-    if hours > 24 {
-        let days = hours / 24;
-        let hours = hours % 24;
-        format!("{}d {:02}:{:02}:{:02}", days, hours, mins, secs)
-    } else if hours > 0 {
-        format!("{:02}:{:02}:{:02}", hours, mins, secs)
-    } else {
-        format!("{:02}:{:02}", mins, secs)
-    }
-}
-
-/// Format seconds as LSF duration format (HH:MM).
-fn format_duration_lsf(seconds: u64) -> String {
-    let hours = seconds / 3600;
-    let mins = (seconds % 3600) / 60;
-    format!("{}:{:02}", hours, mins)
 }
 
 #[cfg(test)]
@@ -364,20 +329,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_lsf_memory() {
+    fn test_parse_lsf_memory_from_line() {
         assert_eq!(
-            parse_lsf_memory("MAX MEM: 4.5 Gbytes", "MAX MEM:"),
+            parse_lsf_memory_from_line("MAX MEM: 4.5 GB", "MAX MEM:"),
             Some(4608)
         );
         assert_eq!(
-            parse_lsf_memory("MEMLIMIT 8192 Mbytes", "MEMLIMIT"),
+            parse_lsf_memory_from_line("MEMLIMIT 8192 MB", "MEMLIMIT"),
             Some(8192)
         );
     }
 
     #[test]
-    fn test_parse_lsf_time() {
-        assert_eq!(parse_lsf_time("Run time: 01:30:00"), Some(5400));
-        assert_eq!(parse_lsf_time("1800 seconds"), Some(1800));
+    fn test_parse_lsf_time_from_line() {
+        assert_eq!(parse_lsf_time_from_line("Run time: 01:30:00"), Some(5400));
+        assert_eq!(parse_lsf_time_from_line("1800 seconds"), Some(1800));
     }
 }

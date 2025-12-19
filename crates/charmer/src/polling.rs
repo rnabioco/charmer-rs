@@ -123,12 +123,12 @@ impl PollingService {
         match self.scheduler {
             SchedulerType::Slurm => {
                 if let Err(e) = self.poll_squeue().await {
-                    eprintln!("Error polling squeue: {}", e);
+                    tracing::error!("Error polling squeue: {}", e);
                 }
             }
             SchedulerType::Lsf => {
                 if let Err(e) = self.poll_bjobs().await {
-                    eprintln!("Error polling bjobs: {}", e);
+                    tracing::error!("Error polling bjobs: {}", e);
                 }
             }
         }
@@ -139,12 +139,12 @@ impl PollingService {
         match self.scheduler {
             SchedulerType::Slurm => {
                 if let Err(e) = self.poll_sacct().await {
-                    eprintln!("Error polling sacct: {}", e);
+                    tracing::error!("Error polling sacct: {}", e);
                 }
             }
             SchedulerType::Lsf => {
                 if let Err(e) = self.poll_bhist().await {
-                    eprintln!("Error polling bhist: {}", e);
+                    tracing::error!("Error polling bhist: {}", e);
                 }
             }
         }
@@ -213,20 +213,20 @@ impl PollingService {
             .iter()
             .filter(|(_, job)| {
                 job.status == JobStatus::Failed
-                    && job.slurm_job_id.is_some()
+                    && job.scheduler_job_id.is_some()
                     && job
                         .error
                         .as_ref()
                         .map(|e| e.analysis.is_none())
                         .unwrap_or(true)
             })
-            .map(|(id, job)| (id.clone(), job.slurm_job_id.clone().unwrap()))
+            .map(|(id, job)| (id.clone(), job.scheduler_job_id.clone().unwrap()))
             .take(5) // Limit to avoid too many queries
             .collect();
 
         // Analyze each failed job
-        for (job_id, slurm_job_id) in jobs_needing_analysis {
-            if let Ok(analysis) = charmer_slurm::analyze_failure(&slurm_job_id).await {
+        for (job_id, scheduler_job_id) in jobs_needing_analysis {
+            if let Ok(analysis) = charmer_slurm::analyze_failure(&scheduler_job_id).await {
                 if let Some(job) = state.jobs.get_mut(&job_id) {
                     // Convert SLURM analysis to unified format
                     let unified_analysis = convert_slurm_analysis(&analysis);
@@ -258,16 +258,16 @@ impl PollingService {
             .filter(|(_, job)| {
                 // Get usage for completed and failed jobs that don't have it yet
                 matches!(job.status, JobStatus::Completed | JobStatus::Failed)
-                    && job.slurm_job_id.is_some()
+                    && job.scheduler_job_id.is_some()
                     && job.usage.is_none()
             })
-            .map(|(id, job)| (id.clone(), job.slurm_job_id.clone().unwrap()))
+            .map(|(id, job)| (id.clone(), job.scheduler_job_id.clone().unwrap()))
             .take(10) // Limit to avoid too many queries per poll
             .collect();
 
         // Query resource usage for each job
-        for (job_id, slurm_job_id) in jobs_needing_usage {
-            if let Ok(Some(usage)) = query_resource_usage(&slurm_job_id).await {
+        for (job_id, scheduler_job_id) in jobs_needing_usage {
+            if let Ok(Some(usage)) = query_resource_usage(&scheduler_job_id).await {
                 if let Some(job) = state.jobs.get_mut(&job_id) {
                     job.usage = Some(ResourceUsage {
                         max_rss_mb: usage.max_rss_mb,
@@ -287,10 +287,14 @@ impl PollingService {
             .iter()
             .filter(|(_, job)| {
                 job.status == JobStatus::Failed
-                    && job.slurm_job_id.is_some() // LSF also uses slurm_job_id field
-                    && job.error.as_ref().map(|e| e.analysis.is_none()).unwrap_or(true)
+                    && job.scheduler_job_id.is_some()
+                    && job
+                        .error
+                        .as_ref()
+                        .map(|e| e.analysis.is_none())
+                        .unwrap_or(true)
             })
-            .map(|(id, job)| (id.clone(), job.slurm_job_id.clone().unwrap()))
+            .map(|(id, job)| (id.clone(), job.scheduler_job_id.clone().unwrap()))
             .take(5) // Limit to avoid too many queries
             .collect();
 
@@ -406,7 +410,7 @@ pub async fn init_polling(
     // Detect scheduler
     let scheduler = detect_scheduler().await?;
 
-    eprintln!(
+    tracing::info!(
         "Detected scheduler: {:?}, polling every {} seconds",
         scheduler,
         config.active_poll_interval.as_secs()

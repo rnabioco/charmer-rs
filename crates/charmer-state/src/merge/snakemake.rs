@@ -109,7 +109,7 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
                 outputs: vec![snakemake_job.output_path.clone()],
                 inputs: meta.input.clone(),
                 status,
-                slurm_job_id: None,
+                scheduler_job_id: None,
                 shellcmd: meta.shellcmd.clone(),
                 timing,
                 resources: JobResources::default(),

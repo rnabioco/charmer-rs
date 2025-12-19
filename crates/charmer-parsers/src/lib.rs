@@ -9,7 +9,10 @@ pub mod time;
 
 pub use command::{run_command, run_command_allow_failure, CommandError};
 pub use memory::{parse_memory_mb, MemoryFormat};
-pub use time::{parse_duration, parse_exit_code, parse_lsf_timestamp, parse_slurm_timestamp};
+pub use time::{
+    format_duration, format_duration_lsf, format_duration_slurm, parse_duration,
+    parse_duration_secs, parse_exit_code, parse_lsf_timestamp, parse_slurm_timestamp,
+};
 
 /// Filter helper for optional string fields.
 /// Returns None if the string is empty or a placeholder value.

@@ -353,8 +353,8 @@ impl App {
             }
         }
 
-        // Try SLURM log path format: .snakemake/slurm_logs/rule_{rule}/{slurm_job_id}.log
-        if let Some(ref slurm_id) = job.slurm_job_id {
+        // Try SLURM log path format: .snakemake/slurm_logs/rule_{rule}/{scheduler_job_id}.log
+        if let Some(ref slurm_id) = job.scheduler_job_id {
             let slurm_log = working_dir
                 .join(".snakemake")
                 .join("slurm_logs")

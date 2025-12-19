@@ -2,9 +2,29 @@
 
 use camino::Utf8PathBuf;
 use chrono::{DateTime, Utc};
+use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
+
+// Pre-compiled regex patterns for environment detection
+static PIXI_ENV_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"pixi\s+run\s+(?:-e|--environment)\s+(\S+)").unwrap());
+static CONDA_ENV_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?:conda|mamba|micromamba)\s+(?:run\s+(?:-n|--name)|activate)\s+(\S+)").unwrap()
+});
+static CONTAINER_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?:singularity|apptainer)\s+exec\s+(\S+)|docker\s+run\s+(?:[^/]+\s+)*(\S+/\S+)")
+        .unwrap()
+});
+
+// Pre-compiled regex patterns for error extraction
+static ERROR_RULE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)(?:error in rule|rule[:\s]+|for rule)\s+(\w+)").unwrap());
+static EXIT_CODE_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(?:exit\s*code|exitcode|return\s*code)[:\s]+(\d+)|returned\s+(\d+)").unwrap()
+});
 
 /// Special job ID for the main snakemake pipeline log.
 pub const MAIN_PIPELINE_JOB_ID: &str = "__snakemake_main__";
@@ -273,64 +293,28 @@ impl ExecutionEnvironment {
 
     /// Detect pixi environment from shell command.
     fn detect_pixi(shellcmd: &str) -> Option<String> {
-        // Pattern: `pixi run -e <envname>` or `pixi run --environment <envname>`
-        let patterns = [
-            (r"pixi\s+run\s+-e\s+(\S+)", 1),
-            (r"pixi\s+run\s+--environment\s+(\S+)", 1),
-        ];
-
-        for (pattern, group) in patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if let Some(caps) = re.captures(shellcmd) {
-                    if let Some(m) = caps.get(group) {
-                        return Some(m.as_str().to_string());
-                    }
-                }
-            }
-        }
-        None
+        PIXI_ENV_RE
+            .captures(shellcmd)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
     }
 
     /// Detect conda environment from shell command.
     fn detect_conda(shellcmd: &str) -> Option<String> {
-        // Pattern: `conda run -n <envname>` or `conda run --name <envname>`
-        // Also: `mamba run -n <envname>` or `micromamba run -n <envname>`
-        let patterns = [
-            (r"(?:conda|mamba|micromamba)\s+run\s+-n\s+(\S+)", 1),
-            (r"(?:conda|mamba|micromamba)\s+run\s+--name\s+(\S+)", 1),
-            (r"conda\s+activate\s+(\S+)", 1),
-        ];
-
-        for (pattern, group) in patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if let Some(caps) = re.captures(shellcmd) {
-                    if let Some(m) = caps.get(group) {
-                        return Some(m.as_str().to_string());
-                    }
-                }
-            }
-        }
-        None
+        CONDA_ENV_RE
+            .captures(shellcmd)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str().to_string())
     }
 
     /// Detect container from shell command.
     fn detect_container(shellcmd: &str) -> Option<String> {
-        // Pattern: `singularity exec <image>` or `docker run <image>` or `apptainer exec <image>`
-        let patterns = [
-            (r"(?:singularity|apptainer)\s+exec\s+(\S+)", 1),
-            (r"docker\s+run\s+(?:[^/]+\s+)*(\S+/\S+)", 1),
-        ];
-
-        for (pattern, group) in patterns {
-            if let Ok(re) = regex::Regex::new(pattern) {
-                if let Some(caps) = re.captures(shellcmd) {
-                    if let Some(m) = caps.get(group) {
-                        return Some(m.as_str().to_string());
-                    }
-                }
-            }
-        }
-        None
+        CONTAINER_RE.captures(shellcmd).and_then(|caps| {
+            // Try first capture group (singularity/apptainer), then second (docker)
+            caps.get(1)
+                .or_else(|| caps.get(2))
+                .map(|m| m.as_str().to_string())
+        })
     }
 
     /// Get a display string for the environment.
@@ -493,8 +477,8 @@ pub struct Job {
     /// Current status
     pub status: JobStatus,
 
-    /// SLURM job ID (if submitted)
-    pub slurm_job_id: Option<String>,
+    /// Scheduler job ID (SLURM or LSF job ID, if submitted)
+    pub scheduler_job_id: Option<String>,
 
     /// Shell command
     pub shellcmd: String,
@@ -615,7 +599,7 @@ impl PipelineState {
                     outputs: Vec::new(),
                     inputs: Vec::new(),
                     status,
-                    slurm_job_id: None,
+                    scheduler_job_id: None,
                     shellcmd: String::new(),
                     timing: JobTiming::default(),
                     resources: JobResources::default(),
@@ -863,49 +847,18 @@ fn parse_error_string(error: &str) -> PipelineError {
 
 /// Extract rule name from error message.
 fn extract_rule_from_error(error: &str) -> Option<String> {
-    // Pattern: "rule <name>" or "Rule: <name>" or "Error in rule <name>"
-    let patterns = [
-        r"(?i)error in rule\s+(\w+)",
-        r"(?i)rule[:\s]+(\w+)",
-        r"(?i)for rule\s+(\w+)",
-    ];
-
-    for pattern in patterns {
-        if let Ok(re) = regex::Regex::new(pattern) {
-            if let Some(caps) = re.captures(error) {
-                if let Some(m) = caps.get(1) {
-                    let rule = m.as_str();
-                    // Skip common false positives
-                    if rule != "the" && rule != "a" && rule != "an" {
-                        return Some(rule.to_string());
-                    }
-                }
-            }
-        }
-    }
-    None
+    ERROR_RULE_RE
+        .captures(error)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str())
+        .filter(|rule| *rule != "the" && *rule != "a" && *rule != "an")
+        .map(|s| s.to_string())
 }
 
 /// Extract exit code from error message.
 fn extract_exit_code(error: &str) -> Option<i32> {
-    // Pattern: "exit code: N" or "exitcode: N" or "return code N"
-    let patterns = [
-        r"(?i)exit\s*code[:\s]+(\d+)",
-        r"(?i)exitcode[:\s]+(\d+)",
-        r"(?i)return\s*code[:\s]+(\d+)",
-        r"(?i)returned\s+(\d+)",
-    ];
-
-    for pattern in patterns {
-        if let Ok(re) = regex::Regex::new(pattern) {
-            if let Some(caps) = re.captures(error) {
-                if let Some(m) = caps.get(1) {
-                    if let Ok(code) = m.as_str().parse() {
-                        return Some(code);
-                    }
-                }
-            }
-        }
-    }
-    None
+    EXIT_CODE_RE
+        .captures(error)
+        .and_then(|caps| caps.get(1).or_else(|| caps.get(2)))
+        .and_then(|m| m.as_str().parse().ok())
 }

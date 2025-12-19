@@ -11,3 +11,4 @@ base64.workspace = true
 thiserror.workspace = true
 camino.workspace = true
 chrono.workspace = true
+tracing.workspace = true

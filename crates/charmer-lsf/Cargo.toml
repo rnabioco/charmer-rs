@@ -9,3 +9,4 @@ charmer-parsers.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
