@@ -5,7 +5,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{
+        Block, Borders, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
+    },
     Frame,
 };
 
@@ -112,6 +115,21 @@ impl JobList {
         list_state.select(selected);
 
         frame.render_stateful_widget(list, chunks[2], &mut list_state);
+
+        // Render scrollbar if there are more items than visible
+        let list_height = chunks[2].height.saturating_sub(2) as usize; // minus borders
+        if filtered_job_ids.len() > list_height {
+            let mut scrollbar_state = ScrollbarState::new(filtered_job_ids.len())
+                .position(selected.unwrap_or(0));
+
+            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓"))
+                .track_symbol(Some("│"))
+                .thumb_symbol("█");
+
+            frame.render_stateful_widget(scrollbar, chunks[2], &mut scrollbar_state);
+        }
     }
 }
 
