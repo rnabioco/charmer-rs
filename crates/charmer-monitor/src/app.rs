@@ -712,7 +712,7 @@ impl App {
     fn render_rule_detail(&self, frame: &mut Frame, area: Rect, rule: &str) {
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::text::{Line, Span};
-        use ratatui::widgets::{Block, Borders, Paragraph};
+        use ratatui::widgets::{Block, Borders, Paragraph, Sparkline};
 
         let mut lines = Vec::new();
 
@@ -730,6 +730,7 @@ impl App {
         lines.push(Line::from(""));
 
         // Get jobs for this rule
+        let mut runtime_data = Vec::new(); // Collect runtime data for sparkline
         if let Some(job_ids) = self.state.jobs_by_rule.get(rule) {
             let mut running = 0;
             let mut completed = 0;
@@ -737,6 +738,35 @@ impl App {
             let mut pending = 0;
             let mut total_runtime: u64 = 0;
             let mut completed_count = 0;
+
+            // Collect completed jobs with their runtimes for sparkline
+            let mut completed_jobs: Vec<_> = job_ids
+                .iter()
+                .filter_map(|id| {
+                    let job = self.state.jobs.get(id)?;
+                    if job.status == JobStatus::Completed {
+                        if let (Some(start), Some(end)) =
+                            (job.timing.started_at, job.timing.completed_at)
+                        {
+                            let runtime = (end - start).num_seconds().max(0) as u64;
+                            return Some((start, runtime));
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            // Sort by start time to show chronological progression
+            completed_jobs.sort_by_key(|(start, _)| *start);
+
+            // Take last 20 jobs for sparkline (or all if less than 20)
+            runtime_data = completed_jobs
+                .iter()
+                .rev()
+                .take(20)
+                .rev()
+                .map(|(_, runtime)| *runtime)
+                .collect();
 
             for id in job_ids {
                 if let Some(job) = self.state.jobs.get(id) {
@@ -845,12 +875,42 @@ impl App {
             ]));
         }
 
+        // Split area for text content and sparkline
+        let has_sparkline = runtime_data.len() >= 2;
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(if has_sparkline {
+                vec![Constraint::Min(10), Constraint::Length(4)]
+            } else {
+                vec![Constraint::Min(0)]
+            })
+            .split(area);
+
         let paragraph = Paragraph::new(lines).block(
             Block::default()
-                .borders(Borders::ALL)
+                .borders(if has_sparkline {
+                    Borders::TOP | Borders::LEFT | Borders::RIGHT
+                } else {
+                    Borders::ALL
+                })
                 .title(" Rule Details "),
         );
-        frame.render_widget(paragraph, area);
+        frame.render_widget(paragraph, chunks[0]);
+
+        // Render sparkline if we have data
+        if has_sparkline {
+            let sparkline = Sparkline::default()
+                .block(
+                    Block::default()
+                        .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
+                        .title(" Runtime Trend (last 20 jobs) "),
+                )
+                .data(&runtime_data)
+                .style(Style::default().fg(Color::Yellow))
+                .max(runtime_data.iter().max().copied().unwrap_or(1));
+
+            frame.render_widget(sparkline, chunks[1]);
+        }
     }
 
     fn render_log_panel(&self, frame: &mut Frame, area: Rect) {
