@@ -1,0 +1,77 @@
+[workspace]
+name = "charmer"
+version = "0.1.0"
+description = "Snakemake pipeline monitor TUI for SLURM clusters"
+channels = ["conda-forge", "bioconda"]
+platforms = ["osx-arm64", "osx-64", "linux-64"]
+
+[tasks]
+# Run a test snakemake pipeline (local execution)
+test-pipeline = "cd tests/pipelines/simple && snakemake --cores 2 --snakefile Snakefile"
+
+# Clean test pipeline outputs (including .snakemake metadata)
+clean-test = "cd tests/pipelines/simple && rm -rf results logs .snakemake"
+
+# Clean demo pipeline outputs
+clean-demo = "cd tests/pipelines/demo && rm -rf results logs .snakemake"
+
+# Dry run to see what would be executed
+dry-run = "cd tests/pipelines/simple && snakemake --cores 2 --dry-run"
+
+# Generate DAG visualization
+dag = "cd tests/pipelines/simple && snakemake --dag | dot -Tpng > dag.png"
+
+# Build the Rust project
+build = "cargo build"
+
+# Build release binary
+release = "cargo build --release"
+
+# Run tests
+test = "cargo test"
+
+# Run charmer in development mode
+run = "cargo run -- ."
+
+# Monitor the test pipeline
+monitor-test = "cargo run -- tests/pipelines/simple"
+
+# Format code
+fmt = "cargo fmt"
+
+# Run clippy lints
+lint = "cargo clippy -- -D warnings"
+
+# Build documentation
+docs = "mkdocs build"
+
+# Serve documentation locally
+docs-serve = "mkdocs serve"
+
+# Deploy documentation to GitHub Pages
+docs-deploy = "mkdocs gh-deploy --force"
+
+# Generate Rust API docs
+rustdoc = "cargo doc --no-deps --open"
+
+# Generate VHS demo
+demo = "cd docs/tapes && ./generate.sh"
+
+[dependencies]
+# Snakemake and execution plugins
+snakemake = ">=8.0"
+snakemake-executor-plugin-slurm = "*"
+snakemake-executor-plugin-cluster-generic = "*"
+
+# For DAG visualization
+graphviz = "*"
+
+# Python for any helper scripts
+python = ">=3.11"
+
+# Documentation
+mkdocs = "*"
+mkdocs-material = "*"
+
+# VHS for terminal recording
+vhs = "*"

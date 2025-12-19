@@ -10,3 +10,5 @@ ratatui.workspace = true
 crossterm.workspace = true
 tokio.workspace = true
 thiserror.workspace = true
+chrono.workspace = true
+arboard.workspace = true
