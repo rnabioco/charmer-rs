@@ -712,7 +712,7 @@ impl App {
     fn render_rule_detail(&self, frame: &mut Frame, area: Rect, rule: &str) {
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::text::{Line, Span};
-        use ratatui::widgets::{Block, Borders, Paragraph, Sparkline};
+        use ratatui::widgets::{Bar, BarChart, BarGroup, Block, Borders, Paragraph, Sparkline};
 
         let mut lines = Vec::new();
 
@@ -731,11 +731,12 @@ impl App {
 
         // Get jobs for this rule
         let mut runtime_data = Vec::new(); // Collect runtime data for sparkline
+        let mut running = 0;
+        let mut completed = 0;
+        let mut failed = 0;
+        let mut pending = 0;
+
         if let Some(job_ids) = self.state.jobs_by_rule.get(rule) {
-            let mut running = 0;
-            let mut completed = 0;
-            let mut failed = 0;
-            let mut pending = 0;
             let mut total_runtime: u64 = 0;
             let mut completed_count = 0;
 
@@ -875,20 +876,28 @@ impl App {
             ]));
         }
 
-        // Split area for text content and sparkline
+        // Determine what visualizations to show
         let has_sparkline = runtime_data.len() >= 2;
+        let has_jobs = running > 0 || completed > 0 || failed > 0 || pending > 0;
+
+        // Split area for text content, sparkline, and bar chart
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(if has_sparkline {
-                vec![Constraint::Min(10), Constraint::Length(4)]
-            } else {
-                vec![Constraint::Min(0)]
+            .constraints(match (has_sparkline, has_jobs) {
+                (true, true) => vec![
+                    Constraint::Min(8),
+                    Constraint::Length(4),
+                    Constraint::Length(6),
+                ],
+                (true, false) => vec![Constraint::Min(10), Constraint::Length(4)],
+                (false, true) => vec![Constraint::Min(8), Constraint::Length(6)],
+                (false, false) => vec![Constraint::Min(0)],
             })
             .split(area);
 
         let paragraph = Paragraph::new(lines).block(
             Block::default()
-                .borders(if has_sparkline {
+                .borders(if has_sparkline || has_jobs {
                     Borders::TOP | Borders::LEFT | Borders::RIGHT
                 } else {
                     Borders::ALL
@@ -897,19 +906,66 @@ impl App {
         );
         frame.render_widget(paragraph, chunks[0]);
 
+        let mut chunk_idx = 1;
+
         // Render sparkline if we have data
         if has_sparkline {
             let sparkline = Sparkline::default()
                 .block(
                     Block::default()
-                        .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
+                        .borders(if has_jobs {
+                            Borders::LEFT | Borders::RIGHT
+                        } else {
+                            Borders::BOTTOM | Borders::LEFT | Borders::RIGHT
+                        })
                         .title(" Runtime Trend (last 20 jobs) "),
                 )
                 .data(&runtime_data)
                 .style(Style::default().fg(Color::Yellow))
                 .max(runtime_data.iter().max().copied().unwrap_or(1));
 
-            frame.render_widget(sparkline, chunks[1]);
+            frame.render_widget(sparkline, chunks[chunk_idx]);
+            chunk_idx += 1;
+        }
+
+        // Render bar chart showing job status breakdown
+        if has_jobs {
+            let bars = vec![
+                Bar::default()
+                    .value(running as u64)
+                    .label(Line::from("Run"))
+                    .style(Style::default().fg(Color::Yellow))
+                    .value_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                Bar::default()
+                    .value(completed as u64)
+                    .label(Line::from("Done"))
+                    .style(Style::default().fg(Color::Green))
+                    .value_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Bar::default()
+                    .value(failed as u64)
+                    .label(Line::from("Fail"))
+                    .style(Style::default().fg(Color::Red))
+                    .value_style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Bar::default()
+                    .value(pending as u64)
+                    .label(Line::from("Pend"))
+                    .style(Style::default().fg(Color::Blue))
+                    .value_style(Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+            ];
+
+            let bar_group = BarGroup::default().bars(&bars);
+
+            let bar_chart = BarChart::default()
+                .block(
+                    Block::default()
+                        .borders(Borders::BOTTOM | Borders::LEFT | Borders::RIGHT)
+                        .title(" Job Status "),
+                )
+                .data(bar_group)
+                .bar_width(6)
+                .bar_gap(2);
+
+            frame.render_widget(bar_chart, chunks[chunk_idx]);
         }
     }
 
