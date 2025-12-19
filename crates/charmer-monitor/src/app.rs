@@ -1,7 +1,7 @@
 //! Main TUI application.
 
 use crate::components::{
-    DagView, Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
+    Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
 };
 use crate::ui::Theme;
 use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
@@ -73,8 +73,6 @@ pub enum ViewMode {
     Jobs,
     /// Show rule summary
     Rules,
-    /// Show DAG visualization
-    Dag,
 }
 
 impl SortMode {
@@ -256,7 +254,6 @@ impl App {
         match self.view_mode {
             ViewMode::Jobs => self.job_ids.len(),
             ViewMode::Rules => self.rule_names.len(),
-            ViewMode::Dag => 0, // No list in DAG view
         }
     }
 
@@ -301,12 +298,11 @@ impl App {
         self.show_help = !self.show_help;
     }
 
-    /// Toggle between jobs and rules view (DAG excluded).
+    /// Toggle between jobs and rules view.
     pub fn toggle_view_mode(&mut self) {
         self.view_mode = match self.view_mode {
             ViewMode::Jobs => ViewMode::Rules,
             ViewMode::Rules => ViewMode::Jobs,
-            ViewMode::Dag => ViewMode::Jobs, // From DAG, go to jobs
         };
         // Reset selection when switching views
         self.selected_index = 0;
@@ -578,14 +574,6 @@ impl App {
             KeyCode::Char('f') => self.cycle_filter(),
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('r') => self.toggle_view_mode(),
-            KeyCode::Char('d') => {
-                // Toggle DAG view
-                self.view_mode = match self.view_mode {
-                    ViewMode::Dag => ViewMode::Jobs,
-                    _ => ViewMode::Dag,
-                };
-                self.selected_index = 0;
-            }
             KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
             KeyCode::Char('F') if self.show_log_viewer => {
                 // Toggle follow mode when log panel is open
@@ -685,10 +673,6 @@ impl App {
                 if let Some(rule) = self.selected_rule() {
                     self.render_rule_detail(frame, main_chunks[1], rule);
                 }
-            }
-            ViewMode::Dag => {
-                // DAG view takes full main area
-                DagView::render(frame, chunks[1], &self.state);
             }
         }
 

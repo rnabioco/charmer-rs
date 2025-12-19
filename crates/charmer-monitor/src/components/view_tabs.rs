@@ -10,13 +10,9 @@ pub struct ViewTabs;
 
 impl ViewTabs {
     /// Generate a title Line with inline tab selection.
-    /// Returns something like: " [Jobs] Rules DAG "
+    /// Returns something like: " [Jobs] Rules "
     pub fn title_line(view_mode: ViewMode) -> Line<'static> {
-        let tabs = [
-            ("Jobs", ViewMode::Jobs),
-            ("Rules", ViewMode::Rules),
-            ("DAG", ViewMode::Dag),
-        ];
+        let tabs = [("Jobs", ViewMode::Jobs), ("Rules", ViewMode::Rules)];
 
         let mut spans = Vec::new();
         spans.push(Span::raw(" "));

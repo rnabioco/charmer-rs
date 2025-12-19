@@ -1,4 +1,4 @@
-//! Job list component with progress indicator.
+//! Job list component with progress indicator and dependency visualization.
 
 use crate::app::ViewMode;
 use crate::components::ViewTabs;
@@ -13,6 +13,7 @@ use ratatui::{
     },
     Frame,
 };
+use std::collections::{HashMap, HashSet};
 
 /// Minimum widths for columns
 const MIN_ROW_WIDTH: u16 = 4;
@@ -32,6 +33,92 @@ struct DisplayOptions {
     show_sample: bool,
     show_slurm: bool,
     has_scheduler_jobs: bool,
+}
+
+/// Dependency relationship to the selected job
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DepRelation {
+    /// This is the selected job
+    Selected,
+    /// This job is an upstream dependency (selected depends on this)
+    Upstream,
+    /// This job is a downstream dependent (this depends on selected)
+    Downstream,
+    /// No relation to selected job
+    None,
+}
+
+/// Compute dependency relationships for all jobs relative to selected job.
+fn compute_dependencies(
+    state: &PipelineState,
+    job_ids: &[String],
+    selected_idx: Option<usize>,
+) -> Vec<DepRelation> {
+    let mut relations = vec![DepRelation::None; job_ids.len()];
+
+    let Some(sel_idx) = selected_idx else {
+        return relations;
+    };
+
+    let Some(selected_id) = job_ids.get(sel_idx) else {
+        return relations;
+    };
+
+    // Skip if main pipeline job is selected
+    if selected_id == MAIN_PIPELINE_JOB_ID {
+        return relations;
+    }
+
+    let Some(selected_job) = state.jobs.get(selected_id) else {
+        return relations;
+    };
+
+    // Mark selected job
+    relations[sel_idx] = DepRelation::Selected;
+
+    // Build output->job_id map for finding upstream dependencies
+    let mut output_to_job: HashMap<&str, &str> = HashMap::new();
+    for (job_id, job) in &state.jobs {
+        for output in &job.outputs {
+            output_to_job.insert(output.as_str(), job_id.as_str());
+        }
+    }
+
+    // Find upstream: jobs whose outputs are in selected job's inputs
+    let upstream_ids: HashSet<&str> = selected_job
+        .inputs
+        .iter()
+        .filter_map(|input| output_to_job.get(input.as_str()).copied())
+        .collect();
+
+    // Find downstream: jobs whose inputs include selected job's outputs
+    let selected_outputs: HashSet<&str> = selected_job.outputs.iter().map(|s| s.as_str()).collect();
+    let mut downstream_ids: HashSet<&str> = HashSet::new();
+    for (job_id, job) in &state.jobs {
+        if job_id == selected_id {
+            continue;
+        }
+        for input in &job.inputs {
+            if selected_outputs.contains(input.as_str()) {
+                downstream_ids.insert(job_id.as_str());
+                break;
+            }
+        }
+    }
+
+    // Mark relationships in the list
+    for (idx, job_id) in job_ids.iter().enumerate() {
+        if idx == sel_idx {
+            continue;
+        }
+        if upstream_ids.contains(job_id.as_str()) {
+            relations[idx] = DepRelation::Upstream;
+        } else if downstream_ids.contains(job_id.as_str()) {
+            relations[idx] = DepRelation::Downstream;
+        }
+    }
+
+    relations
 }
 
 pub struct JobList;
@@ -93,6 +180,9 @@ impl JobList {
         // Render column headers
         render_column_headers(frame, chunks[1], &opts);
 
+        // Compute dependency relationships for visual indicator
+        let deps = compute_dependencies(state, filtered_job_ids, selected);
+
         // Build job list items with responsive columns
         // Track display row number separately (main pipeline job doesn't get a number)
         let mut display_row = 0usize;
@@ -106,7 +196,7 @@ impl JobList {
                     display_row += 1;
                     display_row
                 };
-                build_job_item(row_num, i, job_id, state, &counts, selected, &opts)
+                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, deps[i])
             })
             .collect();
 
@@ -144,6 +234,7 @@ fn build_job_item(
     counts: &JobCounts,
     selected: Option<usize>,
     opts: &DisplayOptions,
+    dep_relation: DepRelation,
 ) -> ListItem<'static> {
     // Handle main pipeline job specially
     if job_id == MAIN_PIPELINE_JOB_ID {
@@ -294,6 +385,15 @@ fn build_job_item(
             col_style,
         ));
     }
+
+    // Add dependency indicator on the right
+    let dep_indicator = match dep_relation {
+        DepRelation::Selected => Span::styled(" ● ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        DepRelation::Upstream => Span::styled(" ○─", Style::default().fg(Color::Cyan)),
+        DepRelation::Downstream => Span::styled(" ○─", Style::default().fg(Color::Magenta)),
+        DepRelation::None => Span::raw("   "),
+    };
+    spans.push(dep_indicator);
 
     ListItem::new(Line::from(spans))
 }

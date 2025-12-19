@@ -1,6 +1,5 @@
 //! TUI components.
 
-pub mod dag_view;
 pub mod footer;
 pub mod header;
 pub mod job_detail;
@@ -9,7 +8,6 @@ pub mod log_viewer;
 pub mod rule_summary;
 pub mod view_tabs;
 
-pub use dag_view::DagView;
 pub use footer::Footer;
 pub use header::Header;
 pub use job_detail::JobDetail;
