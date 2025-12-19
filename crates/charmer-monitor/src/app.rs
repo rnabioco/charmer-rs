@@ -133,6 +133,8 @@ impl App {
             status_message: None,
             command_expanded: false,
         };
+        // Update job list first to ensure MAIN_PIPELINE_JOB_ID is in the list
+        app.update_job_list();
         // Open log viewer by default
         app.open_log_viewer();
         app
