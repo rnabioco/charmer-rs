@@ -48,14 +48,29 @@ enum DepRelation {
     None,
 }
 
+/// Position in the dependency chain for rendering tree connectors
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChainPosition {
+    /// First node in chain (top) - uses ┐
+    First,
+    /// Last node in chain (bottom) - uses ┘
+    Last,
+    /// Middle node - uses ┤
+    Middle,
+    /// Not a node, just trunk passing through - uses │
+    Trunk,
+    /// Outside the chain entirely
+    Outside,
+}
+
 /// Compute dependency relationships for all jobs relative to selected job.
-/// Returns (relation, should_draw_line) for each job.
+/// Returns (relation, chain_position) for each job.
 fn compute_dependencies(
     state: &PipelineState,
     job_ids: &[String],
     selected_idx: Option<usize>,
-) -> Vec<(DepRelation, bool)> {
-    let mut relations = vec![(DepRelation::None, false); job_ids.len()];
+) -> Vec<(DepRelation, ChainPosition)> {
+    let mut relations = vec![(DepRelation::None, ChainPosition::Outside); job_ids.len()];
 
     let Some(sel_idx) = selected_idx else {
         return relations;
@@ -107,7 +122,7 @@ fn compute_dependencies(
         }
     }
 
-    // Mark relationships in the list and track chain member indices
+    // Mark relationships and collect chain member indices
     let mut chain_indices: Vec<usize> = vec![sel_idx];
     for (idx, job_id) in job_ids.iter().enumerate() {
         if idx == sel_idx {
@@ -122,15 +137,31 @@ fn compute_dependencies(
         }
     }
 
-    // Draw connecting lines between chain members
+    // Determine chain positions for tree rendering
     if chain_indices.len() > 1 {
-        let min_idx = *chain_indices.iter().min().unwrap();
-        let max_idx = *chain_indices.iter().max().unwrap();
+        chain_indices.sort();
+        let min_idx = chain_indices[0];
+        let max_idx = chain_indices[chain_indices.len() - 1];
 
-        // Mark all rows between min and max to draw the vertical line
+        // Mark positions for all rows in the range
         for idx in min_idx..=max_idx {
-            relations[idx].1 = true; // draw line
+            if relations[idx].0 != DepRelation::None {
+                // This is an actual chain member
+                if idx == min_idx {
+                    relations[idx].1 = ChainPosition::First;
+                } else if idx == max_idx {
+                    relations[idx].1 = ChainPosition::Last;
+                } else {
+                    relations[idx].1 = ChainPosition::Middle;
+                }
+            } else {
+                // Trunk passes through
+                relations[idx].1 = ChainPosition::Trunk;
+            }
         }
+    } else if chain_indices.len() == 1 {
+        // Only selected job, no dependencies to show
+        relations[sel_idx].1 = ChainPosition::Outside;
     }
 
     relations
@@ -211,8 +242,8 @@ impl JobList {
                     display_row += 1;
                     display_row
                 };
-                let (relation, draw_line) = deps[i];
-                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, relation, draw_line)
+                let (relation, chain_pos) = deps[i];
+                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, relation, chain_pos)
             })
             .collect();
 
@@ -251,7 +282,7 @@ fn build_job_item(
     selected: Option<usize>,
     opts: &DisplayOptions,
     dep_relation: DepRelation,
-    draw_line: bool,
+    chain_pos: ChainPosition,
 ) -> ListItem<'static> {
     // Handle main pipeline job specially
     if job_id == MAIN_PIPELINE_JOB_ID {
@@ -403,16 +434,58 @@ fn build_job_item(
         ));
     }
 
-    // Add dependency indicator on the right - vertical chain with markers
-    // ○ = dependency node, ● = selected, │ = connecting line
-    let dep_indicator = match dep_relation {
-        DepRelation::Selected => Span::styled(" ● ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        DepRelation::Upstream => Span::styled(" ○ ", Style::default().fg(Color::Cyan)),
-        DepRelation::Downstream => Span::styled(" ○ ", Style::default().fg(Color::Magenta)),
-        DepRelation::None if draw_line => Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
-        DepRelation::None => Span::raw("   "),
+    // Add dependency tree indicator on the right
+    // Format: ○─┐ (first), ○─┤ (middle), ○─┘ (last), or just │ (trunk)
+    let tree_style = Style::default().fg(Color::White);
+
+    let dep_indicator: Vec<Span> = match chain_pos {
+        ChainPosition::First => {
+            let dot_style = match dep_relation {
+                DepRelation::Upstream => Style::default().fg(Color::Cyan),
+                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Downstream => Style::default().fg(Color::Magenta),
+                DepRelation::None => tree_style,
+            };
+            let dot = if dep_relation == DepRelation::Selected { "●" } else { "○" };
+            vec![
+                Span::styled(dot, dot_style),
+                Span::styled("─┐", tree_style),
+            ]
+        }
+        ChainPosition::Middle => {
+            let dot_style = match dep_relation {
+                DepRelation::Upstream => Style::default().fg(Color::Cyan),
+                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Downstream => Style::default().fg(Color::Magenta),
+                DepRelation::None => tree_style,
+            };
+            let dot = if dep_relation == DepRelation::Selected { "●" } else { "○" };
+            vec![
+                Span::styled(dot, dot_style),
+                Span::styled("─┤", tree_style),
+            ]
+        }
+        ChainPosition::Last => {
+            let dot_style = match dep_relation {
+                DepRelation::Upstream => Style::default().fg(Color::Cyan),
+                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Downstream => Style::default().fg(Color::Magenta),
+                DepRelation::None => tree_style,
+            };
+            let dot = if dep_relation == DepRelation::Selected { "●" } else { "○" };
+            vec![
+                Span::styled(dot, dot_style),
+                Span::styled("─┘", tree_style),
+            ]
+        }
+        ChainPosition::Trunk => {
+            vec![Span::styled("  │", tree_style)]
+        }
+        ChainPosition::Outside => {
+            vec![Span::raw("   ")]
+        }
     };
-    spans.push(dep_indicator);
+    spans.extend(dep_indicator);
 
     ListItem::new(Line::from(spans))
 }
