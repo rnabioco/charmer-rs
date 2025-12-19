@@ -265,8 +265,7 @@ impl LogViewer {
         // Render scrollbar for panel if content exceeds viewport
         if state.lines.len() > content_height {
             let scroll_pos = state.lines.len().saturating_sub(content_height);
-            let mut scrollbar_state =
-                ScrollbarState::new(state.lines.len()).position(scroll_pos);
+            let mut scrollbar_state = ScrollbarState::new(state.lines.len()).position(scroll_pos);
 
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(Some("↑"))

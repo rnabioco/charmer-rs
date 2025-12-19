@@ -283,7 +283,9 @@ impl JobList {
                     display_row
                 };
                 let (relation, chain_pos) = deps[i];
-                build_job_item(row_num, i, job_id, state, &counts, selected, &opts, relation, chain_pos)
+                build_job_item(
+                    row_num, i, job_id, state, &counts, selected, &opts, relation, chain_pos,
+                )
             })
             .collect();
 
@@ -516,7 +518,9 @@ fn build_job_item(
         ChainPosition::First => {
             let dot_style = match dep_relation {
                 DepRelation::Upstream => Style::default().fg(Color::Cyan),
-                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Selected => Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
                 DepRelation::Downstream => Style::default().fg(Color::Magenta),
                 DepRelation::None => tree_style,
             };
@@ -528,7 +532,9 @@ fn build_job_item(
         ChainPosition::Middle => {
             let dot_style = match dep_relation {
                 DepRelation::Upstream => Style::default().fg(Color::Cyan),
-                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Selected => Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
                 DepRelation::Downstream => Style::default().fg(Color::Magenta),
                 DepRelation::None => tree_style,
             };
@@ -540,7 +546,9 @@ fn build_job_item(
         ChainPosition::Last => {
             let dot_style = match dep_relation {
                 DepRelation::Upstream => Style::default().fg(Color::Cyan),
-                DepRelation::Selected => Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                DepRelation::Selected => Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
                 DepRelation::Downstream => Style::default().fg(Color::Magenta),
                 DepRelation::None => tree_style,
             };
@@ -808,8 +816,8 @@ fn render_progress_header(
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(filter_sort_width as u16),    // Filter/Sort with padding
-            Constraint::Min(1),                               // Gauge fills remaining
+            Constraint::Length(filter_sort_width as u16), // Filter/Sort with padding
+            Constraint::Min(1),                           // Gauge fills remaining
             Constraint::Length(count_text.len() as u16 + 1), // +1 for padding
         ])
         .split(inner);
@@ -819,7 +827,10 @@ fn render_progress_header(
         Span::styled(" Filter:", Style::default().fg(Color::DarkGray)),
         Span::styled(filter_label, Style::default().fg(Color::Cyan)),
         Span::styled(" Sort:", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{} ", sort_label), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!("{} ", sort_label),
+            Style::default().fg(Color::Yellow),
+        ),
     ]));
     frame.render_widget(filter_sort, chunks[0]);
 

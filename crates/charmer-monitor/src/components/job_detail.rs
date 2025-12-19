@@ -32,8 +32,11 @@ impl JobDetail {
             ))],
         };
 
-        let paragraph = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title(" Job Details "));
+        let paragraph = Paragraph::new(content).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Job Details "),
+        );
 
         frame.render_widget(paragraph, area);
     }
@@ -42,8 +45,11 @@ impl JobDetail {
     pub fn render_pipeline(frame: &mut Frame, area: Rect, state: &PipelineState) {
         let content = build_pipeline_lines(state);
 
-        let paragraph = Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).title(" Job Details "));
+        let paragraph = Paragraph::new(content).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Job Details "),
+        );
 
         frame.render_widget(paragraph, area);
     }
@@ -249,7 +255,10 @@ fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
 
     // Wildcards / Sample info - colored to match job list
     if let Some(ref wildcards) = job.wildcards {
-        let mut spans = vec![Span::styled("Wildcards: ", Style::default().fg(Color::Gray))];
+        let mut spans = vec![Span::styled(
+            "Wildcards: ",
+            Style::default().fg(Color::Gray),
+        )];
 
         // Parse and color each wildcard: key in white, value in color
         let pairs: Vec<(&str, &str)> = wildcards

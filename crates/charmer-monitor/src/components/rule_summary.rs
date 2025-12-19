@@ -7,7 +7,9 @@ use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::Span,
-    widgets::{Block, Borders, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState},
+    widgets::{
+        Block, Borders, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
+    },
     Frame,
 };
 
@@ -197,11 +199,7 @@ impl RuleSummary {
             ],
         )
         .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title),
-        )
+        .block(Block::default().borders(Borders::ALL).title(title))
         // Text emphasis only, no background - matches job list
         .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
