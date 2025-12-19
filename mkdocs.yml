@@ -1,8 +1,8 @@
 site_name: charmer
 site_description: TUI for monitoring Snakemake pipelines on HPC clusters
-site_url: https://rnabioco.github.io/charmer
-repo_url: https://github.com/rnabioco/charmer
-repo_name: rnabioco/charmer
+site_url: https://rnabioco.github.io/charmer-rs
+repo_url: https://github.com/rnabioco/charmer-rs
+repo_name: rnabioco/charmer-rs
 
 theme:
   name: material
@@ -65,4 +65,4 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/rnabioco/charmer
+      link: https://github.com/rnabioco/charmer-rs

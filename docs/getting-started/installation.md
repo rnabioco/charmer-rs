@@ -12,8 +12,8 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/rnabioco/charmer.git
-cd charmer
+git clone https://github.com/rnabioco/charmer-rs.git
+cd charmer-rs
 
 # Build release binary
 cargo build --release
@@ -34,8 +34,8 @@ cargo install --path crates/charmer
 curl -fsSL https://pixi.sh/install.sh | bash
 
 # Clone and install
-git clone https://github.com/rnabioco/charmer.git
-cd charmer
+git clone https://github.com/rnabioco/charmer-rs.git
+cd charmer-rs
 pixi install
 
 # Build
@@ -54,11 +54,11 @@ Pre-built binaries are available for each release:
 - `charmer-macos-x86_64.tar.gz` - macOS Intel
 - `charmer-macos-aarch64.tar.gz` - macOS Apple Silicon
 
-Download from the [releases page](https://github.com/rnabioco/charmer/releases).
+Download from the [releases page](https://github.com/rnabioco/charmer-rs/releases).
 
 ```bash
 # Example for Linux
-curl -LO https://github.com/rnabioco/charmer/releases/latest/download/charmer-linux-x86_64.tar.gz
+curl -LO https://github.com/rnabioco/charmer-rs/releases/latest/download/charmer-linux-x86_64.tar.gz
 tar xzf charmer-linux-x86_64.tar.gz
 ./charmer --help
 ```

@@ -13,7 +13,7 @@ A terminal user interface (TUI) for monitoring Snakemake pipelines on HPC cluste
 ## Installation
 
 ```bash
-cargo install --git https://github.com/rnabioco/charmer.git
+cargo install --git https://github.com/rnabioco/charmer-rs.git
 ```
 
 ## Quick Start
@@ -28,7 +28,7 @@ charmer /path/to/pipeline
 
 ## Documentation
 
-Full documentation is available at **[rnabioco.github.io/charmer](https://rnabioco.github.io/charmer)**.
+Full documentation is available at **[rnabioco.github.io/charmer-rs](https://rnabioco.github.io/charmer-rs)**.
 
 ## License
 

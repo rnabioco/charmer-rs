@@ -12,8 +12,8 @@ Thank you for your interest in contributing to charmer!
 ### Clone and Build
 
 ```bash
-git clone https://github.com/rnabioco/charmer.git
-cd charmer
+git clone https://github.com/rnabioco/charmer-rs.git
+cd charmer-rs
 
 # Using cargo
 cargo build
