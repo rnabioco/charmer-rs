@@ -2,14 +2,23 @@
 
 use base64::prelude::*;
 use camino::{Utf8Path, Utf8PathBuf};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
+
+/// Deserialize a string field that may be null, defaulting to empty string.
+fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
+}
 
 /// Snakemake job metadata from .snakemake/metadata/{base64_output_file}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SnakemakeMetadata {
     /// Rule name
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
     pub rule: String,
 
     /// Input files
@@ -25,15 +34,15 @@ pub struct SnakemakeMetadata {
     pub params: Vec<String>,
 
     /// Actual shell command executed
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
     pub shellcmd: String,
 
     /// Whether the job is incomplete (still running)
     #[serde(default)]
     pub incomplete: bool,
 
-    /// Start timestamp (Unix epoch)
-    pub starttime: f64,
+    /// Start timestamp (Unix epoch) - None if not yet started
+    pub starttime: Option<f64>,
 
     /// End timestamp (Unix epoch) - None if still running
     pub endtime: Option<f64>,
@@ -175,6 +184,28 @@ mod tests {
         let meta: SnakemakeMetadata = serde_json::from_str(json).unwrap();
         assert_eq!(meta.rule, "test_rule");
         assert!(!meta.incomplete);
+        assert_eq!(meta.starttime, Some(1700000000.0));
         assert_eq!(meta.endtime, Some(1700000100.0));
+    }
+
+    #[test]
+    fn test_parse_metadata_with_nulls() {
+        // Test that null values are handled gracefully
+        let json = r#"{
+            "rule": null,
+            "input": [],
+            "log": [],
+            "params": [],
+            "shellcmd": "",
+            "incomplete": false,
+            "starttime": null,
+            "endtime": null,
+            "job_hash": 0
+        }"#;
+
+        let meta: SnakemakeMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.rule, "");
+        assert_eq!(meta.starttime, None);
+        assert_eq!(meta.endtime, None);
     }
 }

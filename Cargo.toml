@@ -15,7 +15,7 @@ ratatui = "0.30.0-beta.0"
 crossterm = "0.29"
 
 # Async
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.48", features = ["full"] }
 
 # File watching
 notify = "8.2"
@@ -31,18 +31,18 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 
 # Paths
-camino = { version = "1.1", features = ["serde1"] }
+camino = { version = "1.2", features = ["serde1"] }
 
 # Regex for parsing
-regex = "1.11"
-once_cell = "1.20"
+regex = "1.12"
+once_cell = "1.21"
 
 # Base64 for snakemake filenames
 base64 = "0.22"
 
 # Error handling
 thiserror = "2.0"
-miette = { version = "7.4", features = ["fancy"] }
+miette = { version = "7.6", features = ["fancy"] }
 
 # Logging
 tracing = "0.1"

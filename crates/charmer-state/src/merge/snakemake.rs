@@ -75,7 +75,7 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
         // Build timing
         let timing = JobTiming {
             queued_at: None,
-            started_at: Some(timestamp_to_datetime(meta.starttime)),
+            started_at: meta.starttime.map(timestamp_to_datetime),
             completed_at: meta.endtime.map(timestamp_to_datetime),
         };
 

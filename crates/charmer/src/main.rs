@@ -36,7 +36,12 @@ async fn main() -> Result<()> {
             .into_iter()
             .filter(|job| {
                 // Keep jobs that are incomplete (still running) or started recently
-                job.metadata.incomplete || job.metadata.starttime > cutoff.timestamp() as f64
+                job.metadata.incomplete
+                    || job
+                        .metadata
+                        .starttime
+                        .map(|t| t > cutoff.timestamp() as f64)
+                        .unwrap_or(true)
             })
             .collect();
 
