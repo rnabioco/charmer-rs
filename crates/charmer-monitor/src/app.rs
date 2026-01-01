@@ -538,16 +538,14 @@ impl App {
         if let Ok(entries) = std::fs::read_dir(&log_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.ends_with(".snakemake.log") {
-                        if let Ok(metadata) = entry.metadata() {
-                            if let Ok(modified) = metadata.modified() {
-                                let path_str = path.to_string_lossy().to_string();
-                                if latest.is_none() || modified > latest.as_ref().unwrap().0 {
-                                    latest = Some((modified, path_str));
-                                }
-                            }
-                        }
+                if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    && name.ends_with(".snakemake.log")
+                    && let Ok(metadata) = entry.metadata()
+                    && let Ok(modified) = metadata.modified()
+                {
+                    let path_str = path.to_string_lossy().to_string();
+                    if latest.is_none() || modified > latest.as_ref().unwrap().0 {
+                        latest = Some((modified, path_str));
                     }
                 }
             }
@@ -603,11 +601,9 @@ impl App {
             let log_path = state.log_path.clone();
             let follow = state.follow_mode;
             self.log_viewer_state = Some(LogViewerState::new(log_path, 1000));
-            if follow {
-                if let Some(ref mut new_state) = self.log_viewer_state {
-                    new_state.follow_mode = true;
-                    new_state.scroll_to_bottom();
-                }
+            if follow && let Some(ref mut new_state) = self.log_viewer_state {
+                new_state.follow_mode = true;
+                new_state.scroll_to_bottom();
             }
         }
     }
@@ -618,12 +614,11 @@ impl App {
         self.update_job_list();
 
         // Refresh log viewer if in follow mode
-        if self.show_log_viewer {
-            if let Some(ref state) = self.log_viewer_state {
-                if state.follow_mode {
-                    self.refresh_log_viewer();
-                }
-            }
+        if self.show_log_viewer
+            && let Some(ref state) = self.log_viewer_state
+            && state.follow_mode
+        {
+            self.refresh_log_viewer();
         }
     }
 
@@ -741,11 +736,11 @@ impl App {
 
     /// Poll for events and handle them.
     pub fn poll_events(&mut self, timeout: Duration) -> std::io::Result<bool> {
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                self.handle_key(key);
-                return Ok(true);
-            }
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            self.handle_key(key);
+            return Ok(true);
         }
         Ok(false)
     }

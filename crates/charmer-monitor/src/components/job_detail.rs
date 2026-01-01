@@ -576,45 +576,43 @@ fn build_detail_lines(job: &Job, command_expanded: bool) -> Vec<Line<'static>> {
             ]));
 
             // Memory details for OOM
-            if analysis.mode == FailureMode::OutOfMemory {
-                if let (Some(used), Some(limit)) =
+            if analysis.mode == FailureMode::OutOfMemory
+                && let (Some(used), Some(limit)) =
                     (analysis.memory_used_mb, analysis.memory_limit_mb)
-                {
-                    lines.push(Line::from(vec![
-                        Span::styled("  Memory: ", Style::default().fg(Color::Gray)),
-                        Span::styled(
-                            format!("{:.1} GB", used as f64 / 1024.0),
-                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" / ", Style::default().fg(Color::Gray)),
-                        Span::styled(
-                            format!("{:.1} GB limit", limit as f64 / 1024.0),
-                            Style::default().fg(Color::Gray),
-                        ),
-                    ]));
-                }
+            {
+                lines.push(Line::from(vec![
+                    Span::styled("  Memory: ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format!("{:.1} GB", used as f64 / 1024.0),
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" / ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format!("{:.1} GB limit", limit as f64 / 1024.0),
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]));
             }
 
             // Time details for Timeout
-            if analysis.mode == FailureMode::Timeout {
-                if let (Some(runtime), Some(limit)) =
+            if analysis.mode == FailureMode::Timeout
+                && let (Some(runtime), Some(limit)) =
                     (analysis.runtime_seconds, analysis.time_limit_seconds)
-                {
-                    lines.push(Line::from(vec![
-                        Span::styled("  Time: ", Style::default().fg(Color::Gray)),
-                        Span::styled(
-                            format_seconds(runtime),
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(" / ", Style::default().fg(Color::Gray)),
-                        Span::styled(
-                            format!("{} limit", format_seconds(limit)),
-                            Style::default().fg(Color::Gray),
-                        ),
-                    ]));
-                }
+            {
+                lines.push(Line::from(vec![
+                    Span::styled("  Time: ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format_seconds(runtime),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(" / ", Style::default().fg(Color::Gray)),
+                    Span::styled(
+                        format!("{} limit", format_seconds(limit)),
+                        Style::default().fg(Color::Gray),
+                    ),
+                ]));
             }
 
             // Explanation

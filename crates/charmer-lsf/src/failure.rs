@@ -315,10 +315,10 @@ fn parse_lsf_time_from_line(line: &str) -> Option<u64> {
     // Look for "N seconds" pattern
     if let Some(idx) = line.find("seconds") {
         let before = line[..idx].trim();
-        if let Some(num_str) = before.split_whitespace().last() {
-            if let Ok(secs) = num_str.parse::<u64>() {
-                return Some(secs);
-            }
+        if let Some(num_str) = before.split_whitespace().last()
+            && let Ok(secs) = num_str.parse::<u64>()
+        {
+            return Some(secs);
         }
     }
     None

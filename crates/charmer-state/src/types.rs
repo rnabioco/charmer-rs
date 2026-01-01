@@ -635,36 +635,36 @@ impl PipelineState {
         // Update status of existing target jobs based on pipeline state
         for rule in &info.target_rules {
             let job_id = format!("__target_{}__", rule);
-            if let Some(job) = self.jobs.get_mut(&job_id) {
-                if job.is_target {
-                    job.status = if info.finished && self.pipeline_errors.is_empty() {
-                        JobStatus::Completed
-                    } else if info.finished {
-                        JobStatus::Failed
-                    } else {
-                        JobStatus::Pending
-                    };
-                    // Update timing when pipeline finishes
-                    if info.finished && job.timing.completed_at.is_none() {
-                        job.timing.completed_at = Some(chrono::Utc::now());
-                    }
+            if let Some(job) = self.jobs.get_mut(&job_id)
+                && job.is_target
+            {
+                job.status = if info.finished && self.pipeline_errors.is_empty() {
+                    JobStatus::Completed
+                } else if info.finished {
+                    JobStatus::Failed
+                } else {
+                    JobStatus::Pending
+                };
+                // Update timing when pipeline finishes
+                if info.finished && job.timing.completed_at.is_none() {
+                    job.timing.completed_at = Some(chrono::Utc::now());
                 }
             }
 
             // Also update any regular jobs for this target rule (they have no outputs)
             if let Some(job_ids) = self.jobs_by_rule.get(rule).cloned() {
                 for job_id in job_ids {
-                    if let Some(job) = self.jobs.get_mut(&job_id) {
-                        if job.outputs.is_empty() {
-                            job.is_target = true;
-                            job.status = if info.finished && self.pipeline_errors.is_empty() {
-                                JobStatus::Completed
-                            } else if info.finished {
-                                JobStatus::Failed
-                            } else {
-                                JobStatus::Pending
-                            };
-                        }
+                    if let Some(job) = self.jobs.get_mut(&job_id)
+                        && job.outputs.is_empty()
+                    {
+                        job.is_target = true;
+                        job.status = if info.finished && self.pipeline_errors.is_empty() {
+                            JobStatus::Completed
+                        } else if info.finished {
+                            JobStatus::Failed
+                        } else {
+                            JobStatus::Pending
+                        };
                     }
                 }
             }
@@ -708,12 +708,12 @@ impl PipelineState {
         let mut completed_with_timing = 0;
 
         for job in self.jobs.values() {
-            if job.status == JobStatus::Completed {
-                if let (Some(start), Some(end)) = (job.timing.started_at, job.timing.completed_at) {
-                    let runtime = (end - start).num_seconds().max(0) as u64;
-                    total_runtime_secs += runtime;
-                    completed_with_timing += 1;
-                }
+            if job.status == JobStatus::Completed
+                && let (Some(start), Some(end)) = (job.timing.started_at, job.timing.completed_at)
+            {
+                let runtime = (end - start).num_seconds().max(0) as u64;
+                total_runtime_secs += runtime;
+                completed_with_timing += 1;
             }
         }
 

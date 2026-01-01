@@ -86,26 +86,24 @@ fn parse_bhist_long_output(
 
         // Parse job details from current job
         if let Some(ref mut job) = current_job {
-            if line.contains("Job Name <") {
-                if let (Some(start), Some(end)) = (line.find("Job Name <"), line.rfind(">")) {
-                    job.name = line[start + 10..end].to_string();
-                }
+            if line.contains("Job Name <")
+                && let (Some(start), Some(end)) = (line.find("Job Name <"), line.rfind(">"))
+            {
+                job.name = line[start + 10..end].to_string();
             }
-            if line.contains("Queue <") {
-                if let (Some(start), Some(end)) = (line.find("Queue <"), line.find(">,")) {
-                    job.queue = Some(line[start + 7..end].to_string());
-                }
+            if line.contains("Queue <")
+                && let (Some(start), Some(end)) = (line.find("Queue <"), line.find(">,"))
+            {
+                job.queue = Some(line[start + 7..end].to_string());
             }
             if line.starts_with("Submitted from") || line.contains("submitted from") {
                 // Parse submit time from context - LSF format varies
             }
-            if line.contains("Started on") {
-                if let Some(host_start) = line.find("Started on <") {
-                    if let Some(host_end) = line[host_start..].find(">,") {
-                        job.exec_host =
-                            Some(line[host_start + 12..host_start + host_end].to_string());
-                    }
-                }
+            if line.contains("Started on")
+                && let Some(host_start) = line.find("Started on <")
+                && let Some(host_end) = line[host_start..].find(">,")
+            {
+                job.exec_host = Some(line[host_start + 12..host_start + host_end].to_string());
             }
             if line.contains("Done successfully") {
                 job.state = LsfJobState::Done {
@@ -124,11 +122,11 @@ fn parse_bhist_long_output(
                     error: String::new(),
                 };
             }
-            if line.contains("MAX MEM:") {
-                if let Some(mem_str) = line.split("MAX MEM:").nth(1) {
-                    let mem_part = mem_str.trim().split(';').next().unwrap_or("");
-                    job.mem_used_mb = parse_memory_mb(mem_part, MemoryFormat::Lsf);
-                }
+            if line.contains("MAX MEM:")
+                && let Some(mem_str) = line.split("MAX MEM:").nth(1)
+            {
+                let mem_part = mem_str.trim().split(';').next().unwrap_or("");
+                job.mem_used_mb = parse_memory_mb(mem_part, MemoryFormat::Lsf);
             }
         }
     }

@@ -3,18 +3,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Status of a pipeline run.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum RunStatus {
     Running,
     Completed,
     Failed,
+    #[default]
     Unknown,
-}
-
-impl Default for RunStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 /// Information about a single pipeline run.

@@ -233,10 +233,9 @@ async fn run_app(
                         if let Ok(result) = scan_metadata_dir_incremental(
                             &working_dir,
                             &mut state_guard.metadata_mtime_cache,
-                        ) {
-                            if !result.jobs.is_empty() {
-                                merge_snakemake_jobs(&mut state_guard, result.jobs);
-                            }
+                        ) && !result.jobs.is_empty()
+                        {
+                            merge_snakemake_jobs(&mut state_guard, result.jobs);
                         }
                     }
                     WatcherEvent::Error(err) => {

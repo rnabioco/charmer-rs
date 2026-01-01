@@ -76,17 +76,18 @@ impl Header {
         spans.push(Span::styled(dir_display, Style::default().fg(Color::White)));
 
         // ETA (only if running and available)
-        if let Some(eta) = state.eta_string() {
-            if !state.pipeline_finished && state.pipeline_errors.is_empty() {
-                spans.push(sep.clone());
-                spans.push(Span::styled("ETA: ", Style::default().fg(Color::Gray)));
-                spans.push(Span::styled(
-                    eta,
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
+        if let Some(eta) = state.eta_string()
+            && !state.pipeline_finished
+            && state.pipeline_errors.is_empty()
+        {
+            spans.push(sep.clone());
+            spans.push(Span::styled("ETA: ", Style::default().fg(Color::Gray)));
+            spans.push(Span::styled(
+                eta,
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
         }
 
         spans.push(sep.clone());

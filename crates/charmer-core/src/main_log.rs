@@ -58,18 +58,14 @@ pub fn find_latest_log(working_dir: &Utf8Path) -> Option<camino::Utf8PathBuf> {
     if let Ok(entries) = fs::read_dir(&log_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".snakemake.log") {
-                    if let Ok(metadata) = entry.metadata() {
-                        if let Ok(modified) = metadata.modified() {
-                            if let Ok(utf8_path) = camino::Utf8PathBuf::try_from(path) {
-                                if latest.is_none() || modified > latest.as_ref().unwrap().0 {
-                                    latest = Some((modified, utf8_path));
-                                }
-                            }
-                        }
-                    }
-                }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                && name.ends_with(".snakemake.log")
+                && let Ok(metadata) = entry.metadata()
+                && let Ok(modified) = metadata.modified()
+                && let Ok(utf8_path) = camino::Utf8PathBuf::try_from(path)
+                && (latest.is_none() || modified > latest.as_ref().unwrap().0)
+            {
+                latest = Some((modified, utf8_path));
             }
         }
     }
