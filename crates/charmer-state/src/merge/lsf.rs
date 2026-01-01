@@ -103,4 +103,5 @@ pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: 
     }
 
     state.last_updated = Utc::now();
+    state.generation = state.generation.wrapping_add(1);
 }

@@ -1,7 +1,8 @@
 //! Main TUI application.
 
 use crate::components::{
-    Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
+    DependencyCache, Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
+    compute_dependencies,
 };
 use crate::ui::Theme;
 use charmer_runs::RunInfo;
@@ -64,6 +65,7 @@ pub enum SortMode {
     Status,
     Rule,
     Time,
+    Recent,
 }
 
 /// View mode for main panel.
@@ -81,7 +83,8 @@ impl SortMode {
         match self {
             Self::Status => Self::Rule,
             Self::Rule => Self::Time,
-            Self::Time => Self::Status,
+            Self::Time => Self::Recent,
+            Self::Recent => Self::Status,
         }
     }
 
@@ -90,6 +93,7 @@ impl SortMode {
             Self::Status => "Status",
             Self::Rule => "Rule",
             Self::Time => "Time",
+            Self::Recent => "Recent",
         }
     }
 }
@@ -111,6 +115,7 @@ pub struct App {
     rule_names: Vec<String>,                   // Cached rule names for rule view
     status_message: Option<(String, Instant)>, // Temporary status message with timestamp
     command_expanded: bool,                    // Whether command section is expanded in details
+    dependency_cache: DependencyCache,         // Cached dependency graph for job list
 
     // Run management
     pub runs: Vec<RunInfo>,           // Available runs
@@ -150,6 +155,7 @@ impl App {
             rule_names,
             status_message: None,
             command_expanded: false,
+            dependency_cache: Vec::new(),
             runs,
             selected_run,
             show_run_picker: false,
@@ -222,6 +228,35 @@ impl App {
                     }
                 });
             }
+            SortMode::Recent => {
+                jobs.sort_by(|(_, a), (_, b)| {
+                    // Target jobs go to the bottom
+                    match (a.is_target, b.is_target) {
+                        (true, false) => return std::cmp::Ordering::Greater,
+                        (false, true) => return std::cmp::Ordering::Less,
+                        _ => {}
+                    }
+                    // Running jobs at the top
+                    match (a.status, b.status) {
+                        (JobStatus::Running, JobStatus::Running) => {}
+                        (JobStatus::Running, _) => return std::cmp::Ordering::Less,
+                        (_, JobStatus::Running) => return std::cmp::Ordering::Greater,
+                        _ => {}
+                    }
+                    // Then sort by most recent activity (completed > started > queued)
+                    let a_time = a
+                        .timing
+                        .completed_at
+                        .or(a.timing.started_at)
+                        .or(a.timing.queued_at);
+                    let b_time = b
+                        .timing
+                        .completed_at
+                        .or(b.timing.started_at)
+                        .or(b.timing.queued_at);
+                    b_time.cmp(&a_time)
+                });
+            }
         }
 
         // Build job IDs list with main pipeline job at top
@@ -242,6 +277,19 @@ impl App {
         } else {
             self.selected_index = 0;
         }
+
+        // Update dependency cache after job list changes
+        self.update_dependency_cache();
+    }
+
+    /// Update the cached dependency graph for the current selection.
+    fn update_dependency_cache(&mut self) {
+        let selected = if self.job_ids.is_empty() {
+            None
+        } else {
+            Some(self.selected_index)
+        };
+        self.dependency_cache = compute_dependencies(&self.state, &self.job_ids, selected);
     }
 
     /// Get the currently selected job.
@@ -291,6 +339,9 @@ impl App {
         if len > 0 {
             self.selected_index = (self.selected_index + 1) % len;
             self.command_expanded = false; // Reset expansion when navigating
+            if self.view_mode == ViewMode::Jobs {
+                self.update_dependency_cache();
+            }
         }
     }
 
@@ -299,17 +350,26 @@ impl App {
         if len > 0 {
             self.selected_index = self.selected_index.checked_sub(1).unwrap_or(len - 1);
             self.command_expanded = false; // Reset expansion when navigating
+            if self.view_mode == ViewMode::Jobs {
+                self.update_dependency_cache();
+            }
         }
     }
 
     pub fn select_first(&mut self) {
         self.selected_index = 0;
+        if self.view_mode == ViewMode::Jobs {
+            self.update_dependency_cache();
+        }
     }
 
     pub fn select_last(&mut self) {
         let len = self.list_len();
         if len > 0 {
             self.selected_index = len - 1;
+            if self.view_mode == ViewMode::Jobs {
+                self.update_dependency_cache();
+            }
         }
     }
 
@@ -736,6 +796,7 @@ impl App {
                     Some(self.selected_index),
                     self.filter_mode.label(),
                     self.sort_mode.label(),
+                    &self.dependency_cache,
                 );
 
                 // Render job detail or pipeline summary
@@ -1100,7 +1161,7 @@ impl App {
   R          Open run selector
   a          Toggle all jobs / snakemake only
   f          Cycle filter (All/Running/Failed/Pending/Completed)
-  s          Cycle sort (Status/Rule/Time)
+  s          Cycle sort (Status/Rule/Time/Recent)
   l / Enter  Toggle log panel
   F          Toggle follow mode (when logs open)
   c          Copy command to clipboard

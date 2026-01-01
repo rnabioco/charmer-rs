@@ -37,8 +37,8 @@ struct DisplayOptions {
 }
 
 /// Dependency relationship to the selected job
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DepRelation {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DepRelation {
     /// This is the selected job
     Selected,
     /// This job is an upstream dependency (selected depends on this)
@@ -46,12 +46,13 @@ enum DepRelation {
     /// This job is a downstream dependent (this depends on selected)
     Downstream,
     /// No relation to selected job
+    #[default]
     None,
 }
 
 /// Position in the dependency chain for rendering tree connectors
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChainPosition {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChainPosition {
     /// First node in chain (top) - uses ┐
     First,
     /// Last node in chain (bottom) - uses ┘
@@ -61,13 +62,17 @@ enum ChainPosition {
     /// Not a node, just trunk passing through - uses │
     Trunk,
     /// Outside the chain entirely
+    #[default]
     Outside,
 }
+
+/// Cached dependency relationships: Vec of (relation, chain_position) per job.
+pub type DependencyCache = Vec<(DepRelation, ChainPosition)>;
 
 /// Compute dependency relationships for all jobs relative to selected job.
 /// Returns (relation, chain_position) for each job.
 /// This finds the FULL transitive dependency chain (all ancestors and descendants).
-fn compute_dependencies(
+pub fn compute_dependencies(
     state: &PipelineState,
     job_ids: &[String],
     selected_idx: Option<usize>,
@@ -224,6 +229,7 @@ impl JobList {
         selected: Option<usize>,
         filter_label: &str,
         sort_label: &str,
+        deps: &DependencyCache,
     ) {
         let counts = state.job_counts();
 
@@ -266,9 +272,6 @@ impl JobList {
 
         // Render column headers
         render_column_headers(frame, chunks[1], &opts);
-
-        // Compute dependency relationships for visual indicator
-        let deps = compute_dependencies(state, filtered_job_ids, selected);
 
         // Build job list items with responsive columns
         // Track display row number separately (main pipeline job doesn't get a number)

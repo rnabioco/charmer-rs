@@ -155,6 +155,127 @@ pub fn scan_metadata_dir(working_dir: &Utf8Path) -> Result<Vec<SnakemakeJob>, Me
     Ok(jobs)
 }
 
+use std::collections::HashSet;
+use std::time::SystemTime;
+
+/// Result of incremental scan - contains parsed jobs and tracking info.
+#[derive(Debug)]
+pub struct IncrementalScanResult {
+    /// New or modified jobs that were parsed.
+    pub jobs: Vec<SnakemakeJob>,
+    /// Total files in metadata directory.
+    pub total_files: usize,
+    /// Files skipped due to unchanged mtime.
+    pub files_skipped: usize,
+}
+
+/// Scan metadata directory incrementally, only parsing changed files.
+///
+/// # Arguments
+/// * `working_dir` - The pipeline working directory
+/// * `mtime_cache` - Mutable reference to the mtime cache (updated in place)
+///
+/// # Returns
+/// * `IncrementalScanResult` with parsed jobs and metadata about the scan
+pub fn scan_metadata_dir_incremental(
+    working_dir: &Utf8Path,
+    mtime_cache: &mut HashMap<String, SystemTime>,
+) -> Result<IncrementalScanResult, MetadataError> {
+    let metadata_dir = working_dir.join(".snakemake").join("metadata");
+
+    if !metadata_dir.exists() {
+        return Ok(IncrementalScanResult {
+            jobs: vec![],
+            total_files: 0,
+            files_skipped: 0,
+        });
+    }
+
+    let mut jobs = Vec::new();
+    let mut current_files: HashSet<String> = HashSet::new();
+    let mut files_skipped = 0;
+    let mut total_files = 0;
+
+    for entry in std::fs::read_dir(&metadata_dir)? {
+        let entry = entry?;
+        let path = Utf8PathBuf::try_from(entry.path()).map_err(|e| {
+            MetadataError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
+        })?;
+
+        // Skip directories and non-files
+        if !path.is_file() {
+            continue;
+        }
+
+        // Skip hidden files
+        if path
+            .file_name()
+            .map(|n| n.starts_with('.'))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+
+        total_files += 1;
+        let path_str = path.to_string();
+        current_files.insert(path_str.clone());
+
+        // Get file mtime
+        let mtime = match entry.metadata().and_then(|m| m.modified()) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("Failed to get mtime for {}: {}", path, e);
+                // Parse anyway if we can't get mtime
+                match parse_metadata_file(&path) {
+                    Ok(job) => jobs.push(job),
+                    Err(e) => tracing::warn!("Failed to parse metadata file {}: {}", path, e),
+                }
+                continue;
+            }
+        };
+
+        // Check if file has changed
+        let should_parse = match mtime_cache.get(&path_str) {
+            Some(cached_mtime) => *cached_mtime != mtime,
+            None => true, // New file
+        };
+
+        if should_parse {
+            match parse_metadata_file(&path) {
+                Ok(job) => {
+                    jobs.push(job);
+                    mtime_cache.insert(path_str, mtime);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse metadata file {}: {}", path, e);
+                    // Don't cache failed parses - retry next time
+                }
+            }
+        } else {
+            files_skipped += 1;
+        }
+    }
+
+    // Remove deleted files from cache
+    let deleted_paths: Vec<String> = mtime_cache
+        .keys()
+        .filter(|path| !current_files.contains(*path))
+        .cloned()
+        .collect();
+    for path in deleted_paths {
+        mtime_cache.remove(&path);
+    }
+
+    Ok(IncrementalScanResult {
+        jobs,
+        total_files,
+        files_skipped,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

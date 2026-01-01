@@ -103,4 +103,5 @@ pub fn merge_slurm_jobs(state: &mut PipelineState, jobs: Vec<SlurmJob>, from_sac
     }
 
     state.last_updated = Utc::now();
+    state.generation = state.generation.wrapping_add(1);
 }

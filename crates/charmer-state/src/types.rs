@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 // Pre-compiled regex patterns for environment detection
 static PIXI_ENV_RE: Lazy<Regex> =
@@ -546,6 +546,16 @@ pub struct PipelineState {
 
     /// Pipeline-level errors from main log (structured)
     pub pipeline_errors: Vec<PipelineError>,
+
+    /// Generation counter, incremented on any mutation.
+    /// Used to skip UI updates when state hasn't changed.
+    #[serde(default)]
+    pub generation: u64,
+
+    /// Mtime cache for metadata files (path -> last known mtime).
+    /// Used for incremental scanning. Not serialized.
+    #[serde(skip)]
+    pub metadata_mtime_cache: HashMap<String, SystemTime>,
 }
 
 impl PipelineState {
@@ -561,6 +571,8 @@ impl PipelineState {
             host: None,
             pipeline_finished: false,
             pipeline_errors: Vec::new(),
+            generation: 0,
+            metadata_mtime_cache: HashMap::new(),
         }
     }
 
@@ -657,6 +669,9 @@ impl PipelineState {
                 }
             }
         }
+
+        // Increment generation to signal state change
+        self.generation = self.generation.wrapping_add(1);
     }
 
     pub fn job_counts(&self) -> JobCounts {

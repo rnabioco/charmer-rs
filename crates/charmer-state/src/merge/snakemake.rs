@@ -141,4 +141,5 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
     }
 
     state.last_updated = Utc::now();
+    state.generation = state.generation.wrapping_add(1);
 }

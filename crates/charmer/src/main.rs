@@ -4,7 +4,7 @@ mod polling;
 mod watcher;
 
 use charmer_cli::Args;
-use charmer_core::{parse_main_log, parse_metadata_file, scan_metadata_dir};
+use charmer_core::{parse_main_log, parse_metadata_file, scan_metadata_dir_incremental};
 use charmer_monitor::App;
 use charmer_runs::{RunStatus, RunStore};
 use charmer_state::{PipelineState, merge_snakemake_jobs};
@@ -66,24 +66,29 @@ async fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(PipelineState::new(args.dir.clone())));
 
     // Scan existing metadata files on startup, filtering to recent jobs
-    if let Ok(existing_jobs) = scan_metadata_dir(&args.dir) {
-        let cutoff = chrono::Utc::now() - chrono::Duration::hours(args.history_hours as i64);
-        let recent_jobs: Vec<_> = existing_jobs
-            .into_iter()
-            .filter(|job| {
-                // Keep jobs that are incomplete (still running) or started recently
-                job.metadata.incomplete
-                    || job
-                        .metadata
-                        .starttime
-                        .map(|t| t > cutoff.timestamp() as f64)
-                        .unwrap_or(true)
-            })
-            .collect();
+    {
+        let mut state_guard = state.lock().await;
+        if let Ok(result) =
+            scan_metadata_dir_incremental(&args.dir, &mut state_guard.metadata_mtime_cache)
+        {
+            let cutoff = chrono::Utc::now() - chrono::Duration::hours(args.history_hours as i64);
+            let recent_jobs: Vec<_> = result
+                .jobs
+                .into_iter()
+                .filter(|job| {
+                    // Keep jobs that are incomplete (still running) or started recently
+                    job.metadata.incomplete
+                        || job
+                            .metadata
+                            .starttime
+                            .map(|t| t > cutoff.timestamp() as f64)
+                            .unwrap_or(true)
+                })
+                .collect();
 
-        if !recent_jobs.is_empty() {
-            let mut state_guard = state.lock().await;
-            merge_snakemake_jobs(&mut state_guard, recent_jobs);
+            if !recent_jobs.is_empty() {
+                merge_snakemake_jobs(&mut state_guard, recent_jobs);
+            }
         }
     }
 
@@ -160,12 +165,17 @@ async fn run_app(
     let mut last_log_parse = std::time::Instant::now();
     let mut debounce_map: HashMap<String, std::time::Instant> = HashMap::new();
     let debounce_duration = Duration::from_millis(500);
+    let mut last_generation: u64 = 0;
 
     loop {
         // Periodically sync app state from shared state (updated by polling service)
         if last_update.elapsed() >= update_interval {
             let state_guard = shared_state.lock().await;
-            app.update_from_state(state_guard.clone());
+            // Only clone and update if state has changed (generation incremented)
+            if state_guard.generation != last_generation {
+                last_generation = state_guard.generation;
+                app.update_from_state(state_guard.clone());
+            }
             drop(state_guard);
             last_update = std::time::Instant::now();
         }
@@ -217,13 +227,16 @@ async fn run_app(
                     }
                     WatcherEvent::MetadataDirectoryCreated => {
                         // Metadata directory was just created - scan for any existing files
-                        let state_guard = shared_state.lock().await;
+                        let mut state_guard = shared_state.lock().await;
                         let working_dir = state_guard.working_dir.clone();
-                        drop(state_guard);
 
-                        if let Ok(jobs) = scan_metadata_dir(&working_dir) {
-                            let mut state_guard = shared_state.lock().await;
-                            merge_snakemake_jobs(&mut state_guard, jobs);
+                        if let Ok(result) = scan_metadata_dir_incremental(
+                            &working_dir,
+                            &mut state_guard.metadata_mtime_cache,
+                        ) {
+                            if !result.jobs.is_empty() {
+                                merge_snakemake_jobs(&mut state_guard, result.jobs);
+                            }
                         }
                     }
                     WatcherEvent::Error(err) => {
@@ -239,16 +252,26 @@ async fn run_app(
 
         // Periodic re-scan as fallback (in case file watcher misses events)
         if last_rescan.elapsed() >= rescan_interval {
-            let state_guard = shared_state.lock().await;
+            let mut state_guard = shared_state.lock().await;
             let working_dir = state_guard.working_dir.clone();
-            drop(state_guard);
 
-            if let Ok(jobs) = scan_metadata_dir(&working_dir)
-                && !jobs.is_empty()
+            if let Ok(result) =
+                scan_metadata_dir_incremental(&working_dir, &mut state_guard.metadata_mtime_cache)
             {
-                let mut state_guard = shared_state.lock().await;
-                merge_snakemake_jobs(&mut state_guard, jobs);
+                if !result.jobs.is_empty() {
+                    merge_snakemake_jobs(&mut state_guard, result.jobs);
+                }
+                // Log skipped files at trace level for debugging
+                if result.files_skipped > 0 {
+                    tracing::trace!(
+                        "Incremental scan: {} files, {} skipped, {} parsed",
+                        result.total_files,
+                        result.files_skipped,
+                        result.total_files - result.files_skipped
+                    );
+                }
             }
+            drop(state_guard);
             last_rescan = std::time::Instant::now();
         }
 
