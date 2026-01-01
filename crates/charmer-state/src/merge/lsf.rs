@@ -9,11 +9,15 @@ use chrono::Utc;
 pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: bool) {
     for lsf_job in jobs {
         // Try to parse rule info from description
-        let (rule, wildcards) = lsf_job
+        let parsed = lsf_job
             .description
             .as_ref()
-            .and_then(|d| parse_lsf_description(d))
-            .unwrap_or_else(|| (lsf_job.name.clone(), None));
+            .and_then(|d| parse_lsf_description(d));
+
+        // Job is a snakemake job if description parsing succeeded (has rule_ prefix)
+        let is_snakemake_job = parsed.is_some();
+
+        let (rule, wildcards) = parsed.unwrap_or_else(|| (lsf_job.name.clone(), None));
 
         let job_id = make_job_id(&rule, wildcards.as_deref());
 
@@ -83,6 +87,7 @@ pub fn merge_lsf_jobs(state: &mut PipelineState, jobs: Vec<LsfJob>, from_bhist: 
                     has_lsf_bhist: from_bhist,
                 },
                 is_target: false,
+                is_snakemake_job,
             };
 
             let rule_name = job.rule.clone();

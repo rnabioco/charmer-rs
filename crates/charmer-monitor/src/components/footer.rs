@@ -15,7 +15,7 @@ pub struct Footer;
 
 impl Footer {
     pub fn render(frame: &mut Frame, area: Rect, status_message: Option<&str>) {
-        let help = "j/k:navigate  l:logs  r:rules  f:filter  s:sort  ?:help  q:quit";
+        let help = "j/k:nav  R:runs  a:all  l:logs  r:rules  f:filter  s:sort  ?:help  q:quit";
         let version = format!("v{}", VERSION);
 
         // Split footer into left (help/status), right (version)

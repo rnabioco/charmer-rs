@@ -100,6 +100,7 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
                 existing.timing.completed_at = timing.completed_at;
             }
             existing.data_sources.has_snakemake_metadata = true;
+            existing.is_snakemake_job = true; // Mark as snakemake job when metadata is found
         } else {
             // Create new job entry
             let job = Job {
@@ -126,6 +127,7 @@ pub fn merge_snakemake_jobs(state: &mut PipelineState, jobs: Vec<SnakemakeJob>) 
                     has_lsf_bhist: false,
                 },
                 is_target: false,
+                is_snakemake_job: true, // Jobs from snakemake metadata are always snakemake jobs
             };
             state.jobs.insert(job_id.clone(), job);
 

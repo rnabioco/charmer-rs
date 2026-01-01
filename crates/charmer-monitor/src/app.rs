@@ -4,6 +4,7 @@ use crate::components::{
     Footer, Header, JobDetail, JobList, LogViewer, LogViewerState, RuleSummary,
 };
 use crate::ui::Theme;
+use charmer_runs::RunInfo;
 use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -110,10 +111,27 @@ pub struct App {
     rule_names: Vec<String>,                   // Cached rule names for rule view
     status_message: Option<(String, Instant)>, // Temporary status message with timestamp
     command_expanded: bool,                    // Whether command section is expanded in details
+
+    // Run management
+    pub runs: Vec<RunInfo>,              // Available runs
+    pub selected_run: Option<String>,    // Currently selected run UUID
+    pub show_run_picker: bool,           // Whether run picker modal is open
+    pub run_picker_index: usize,         // Selected index in run picker
+    pub show_all_jobs: bool,             // Whether to show all jobs or just snakemake jobs
 }
 
 impl App {
     pub fn new(state: PipelineState) -> Self {
+        Self::with_options(state, false, Vec::new(), None)
+    }
+
+    /// Create a new App with run management options.
+    pub fn with_options(
+        state: PipelineState,
+        show_all_jobs: bool,
+        runs: Vec<RunInfo>,
+        selected_run: Option<String>,
+    ) -> Self {
         let job_ids = state.jobs.keys().cloned().collect();
         let rule_names: Vec<String> = state.jobs_by_rule.keys().cloned().collect();
         let mut app = Self {
@@ -132,6 +150,11 @@ impl App {
             rule_names,
             status_message: None,
             command_expanded: false,
+            runs,
+            selected_run,
+            show_run_picker: false,
+            run_picker_index: 0,
+            show_all_jobs,
         };
         // Update job list first to ensure MAIN_PIPELINE_JOB_ID is in the list
         app.update_job_list();
@@ -146,7 +169,13 @@ impl App {
             .state
             .jobs
             .iter()
-            .filter(|(_, job)| self.filter_mode.matches(job.status))
+            .filter(|(_, job)| {
+                // Filter by snakemake status if not showing all jobs
+                if !self.show_all_jobs && !job.is_snakemake_job {
+                    return false;
+                }
+                self.filter_mode.matches(job.status)
+            })
             .collect();
 
         // Sort jobs
@@ -296,6 +325,31 @@ impl App {
 
     pub fn toggle_help(&mut self) {
         self.show_help = !self.show_help;
+    }
+
+    /// Toggle run picker modal.
+    pub fn toggle_run_picker(&mut self) {
+        self.show_run_picker = !self.show_run_picker;
+        if self.show_run_picker {
+            self.run_picker_index = 0;
+        }
+    }
+
+    /// Toggle between snakemake-only and all-jobs view.
+    pub fn toggle_all_jobs(&mut self) {
+        self.show_all_jobs = !self.show_all_jobs;
+        self.update_job_list();
+        let msg = if self.show_all_jobs {
+            "Showing all jobs"
+        } else {
+            "Showing snakemake jobs only"
+        };
+        self.status_message = Some((msg.to_string(), Instant::now()));
+    }
+
+    /// Update runs list.
+    pub fn update_runs(&mut self, runs: Vec<RunInfo>) {
+        self.runs = runs;
     }
 
     /// Toggle between jobs and rules view.
@@ -552,6 +606,38 @@ impl App {
             return;
         }
 
+        // If run picker is showing, handle picker navigation
+        if self.show_run_picker {
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => self.show_run_picker = false,
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !self.runs.is_empty() {
+                        self.run_picker_index = (self.run_picker_index + 1) % self.runs.len();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if !self.runs.is_empty() {
+                        self.run_picker_index = self
+                            .run_picker_index
+                            .checked_sub(1)
+                            .unwrap_or(self.runs.len() - 1);
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(run) = self.runs.get(self.run_picker_index) {
+                        self.selected_run = Some(run.run_uuid.clone());
+                        self.status_message = Some((
+                            format!("Selected run: {}", &run.run_uuid[..8.min(run.run_uuid.len())]),
+                            Instant::now(),
+                        ));
+                    }
+                    self.show_run_picker = false;
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => self.quit(),
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => self.quit(),
@@ -574,6 +660,8 @@ impl App {
             KeyCode::Char('f') => self.cycle_filter(),
             KeyCode::Char('s') => self.cycle_sort(),
             KeyCode::Char('r') => self.toggle_view_mode(),
+            KeyCode::Char('R') => self.toggle_run_picker(),
+            KeyCode::Char('a') => self.toggle_all_jobs(),
             KeyCode::Char('l') | KeyCode::Enter => self.toggle_log_viewer(),
             KeyCode::Char('F') if self.show_log_viewer => {
                 // Toggle follow mode when log panel is open
@@ -693,10 +781,101 @@ impl App {
         // Footer with optional status message
         Footer::render(frame, chunks[3], status_msg);
 
-        // Help overlay (on top of everything)
+        // Overlays (on top of everything)
         if self.show_help {
             self.render_help_overlay(frame);
         }
+        if self.show_run_picker {
+            self.render_run_picker(frame);
+        }
+    }
+
+    /// Render run picker modal.
+    fn render_run_picker(&self, frame: &mut Frame) {
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::text::{Line, Span};
+        use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+
+        let area = centered_rect(60, 50, frame.area());
+        frame.render_widget(Clear, area);
+
+        if self.runs.is_empty() {
+            let paragraph = Paragraph::new("No runs found")
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Select Run (Esc to close) ")
+                        .style(Style::default().bg(Color::DarkGray)),
+                )
+                .style(Style::default().fg(Color::White).bg(Color::DarkGray));
+            frame.render_widget(paragraph, area);
+            return;
+        }
+
+        let items: Vec<ListItem> = self
+            .runs
+            .iter()
+            .map(|run| {
+                let status_icon = match run.status {
+                    charmer_runs::RunStatus::Running => "●",
+                    charmer_runs::RunStatus::Completed => "✓",
+                    charmer_runs::RunStatus::Failed => "✗",
+                    charmer_runs::RunStatus::Unknown => "?",
+                };
+
+                let status_color = match run.status {
+                    charmer_runs::RunStatus::Running => Color::Yellow,
+                    charmer_runs::RunStatus::Completed => Color::Green,
+                    charmer_runs::RunStatus::Failed => Color::Red,
+                    charmer_runs::RunStatus::Unknown => Color::Gray,
+                };
+
+                let uuid_short = if run.run_uuid.len() > 12 {
+                    &run.run_uuid[..12]
+                } else {
+                    &run.run_uuid
+                };
+
+                let jobs_str = format!(
+                    "{}/{}",
+                    run.completed_jobs,
+                    run.total_jobs.unwrap_or(0)
+                );
+
+                let time_ago = format_time_ago(run.last_updated);
+
+                let line = Line::from(vec![
+                    Span::styled(status_icon, Style::default().fg(status_color)),
+                    Span::raw(" "),
+                    Span::styled(uuid_short, Style::default().fg(Color::Cyan)),
+                    Span::raw(" - "),
+                    Span::styled(jobs_str, Style::default().fg(Color::White)),
+                    Span::raw(" jobs - "),
+                    Span::styled(time_ago, Style::default().fg(Color::Gray)),
+                ]);
+
+                ListItem::new(line)
+            })
+            .collect();
+
+        let mut state = ListState::default();
+        state.select(Some(self.run_picker_index));
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Select Run (Enter to select, Esc to cancel) ")
+                    .style(Style::default().bg(Color::DarkGray)),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(60, 60, 80))
+                    .add_modifier(Modifier::BOLD),
+            )
+            .style(Style::default().bg(Color::DarkGray));
+
+        frame.render_stateful_widget(list, area, &mut state);
     }
 
     /// Render detail panel for selected rule.
@@ -919,7 +1098,8 @@ impl App {
   g / Home   Go to first item
   G / End    Go to last item
   r          Toggle view (Jobs/Rules summary)
-  d          Toggle DAG view
+  R          Open run selector
+  a          Toggle all jobs / snakemake only
   f          Cycle filter (All/Running/Failed/Pending/Completed)
   s          Cycle sort (Status/Rule/Time)
   l / Enter  Toggle log panel
@@ -979,5 +1159,21 @@ fn format_secs(secs: u64) -> String {
         format!("{}m{}s", mins, secs)
     } else {
         format!("{}s", secs)
+    }
+}
+
+/// Format a timestamp as a human-readable "time ago" string.
+fn format_time_ago(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let now = chrono::Utc::now();
+    let duration = now.signed_duration_since(dt);
+
+    if duration.num_days() > 0 {
+        format!("{}d ago", duration.num_days())
+    } else if duration.num_hours() > 0 {
+        format!("{}h ago", duration.num_hours())
+    } else if duration.num_minutes() > 0 {
+        format!("{}m ago", duration.num_minutes())
+    } else {
+        "just now".to_string()
     }
 }

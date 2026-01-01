@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 charmer-state.workspace = true
+charmer-runs.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 tokio.workspace = true

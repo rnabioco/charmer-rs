@@ -11,7 +11,7 @@ authors = ["Jay Hesselberth"]
 
 [workspace.dependencies]
 # TUI
-ratatui = "0.30.0-beta.0"
+ratatui = "0.30"
 crossterm = "0.29"
 
 # Async
@@ -58,3 +58,4 @@ charmer-lsf = { path = "crates/charmer-lsf" }
 charmer-state = { path = "crates/charmer-state" }
 charmer-monitor = { path = "crates/charmer-monitor" }
 charmer-cli = { path = "crates/charmer-cli" }
+charmer-runs = { path = "crates/charmer-runs" }

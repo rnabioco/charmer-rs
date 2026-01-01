@@ -56,6 +56,20 @@ impl Header {
             ));
         }
 
+        // Run UUID (if available)
+        if let Some(ref run_uuid) = state.run_uuid {
+            let uuid_short = if run_uuid.len() > 8 {
+                format!("{}…", &run_uuid[..8])
+            } else {
+                run_uuid.clone()
+            };
+            spans.push(sep.clone());
+            spans.push(Span::styled(
+                format!("[{}]", uuid_short),
+                Style::default().fg(Color::Magenta),
+            ));
+        }
+
         spans.push(sep.clone());
 
         // Working directory

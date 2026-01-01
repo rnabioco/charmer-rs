@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 charmer-cli.workspace = true
 charmer-core.workspace = true
+charmer-runs.workspace = true
 charmer-slurm.workspace = true
 charmer-lsf.workspace = true
 charmer-state.workspace = true

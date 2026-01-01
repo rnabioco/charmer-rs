@@ -6,6 +6,7 @@ mod watcher;
 use charmer_cli::Args;
 use charmer_core::{parse_main_log, parse_metadata_file, scan_metadata_dir};
 use charmer_monitor::App;
+use charmer_runs::{RunStatus, RunStore};
 use charmer_state::{merge_snakemake_jobs, PipelineState};
 use clap::Parser;
 use crossterm::{
@@ -25,6 +26,41 @@ use watcher::{MetadataWatcher, WatcherEvent};
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Load run store
+    let run_store = RunStore::new(&args.dir);
+    let runs_state = run_store.load().unwrap_or_default();
+
+    // Handle --list-runs flag
+    if args.list_runs {
+        if runs_state.runs.is_empty() {
+            println!("No runs found in {}", args.dir);
+        } else {
+            println!("Recent runs in {}:", args.dir);
+            for run in &runs_state.runs {
+                let status = match run.status {
+                    RunStatus::Running => "RUNNING",
+                    RunStatus::Completed => "DONE",
+                    RunStatus::Failed => "FAILED",
+                    RunStatus::Unknown => "UNKNOWN",
+                };
+                let uuid_display = if run.run_uuid.len() > 16 {
+                    format!("{}...", &run.run_uuid[..16])
+                } else {
+                    run.run_uuid.clone()
+                };
+                println!(
+                    "  {} {} {}/{} jobs ({})",
+                    uuid_display,
+                    status,
+                    run.completed_jobs,
+                    run.total_jobs.unwrap_or(0),
+                    run.last_updated.format("%Y-%m-%d %H:%M")
+                );
+            }
+        }
+        return Ok(());
+    }
 
     // Initialize pipeline state wrapped in Arc<Mutex<>> for sharing with polling service
     let state = Arc::new(Mutex::new(PipelineState::new(args.dir.clone())));
@@ -61,12 +97,22 @@ async fn main() -> Result<()> {
 
     let _polling_handle = init_polling(Arc::clone(&state), poll_config).await;
 
+    // Determine selected run (from args or auto-detect from runs state)
+    let selected_run = args.run_uuid.clone().or_else(|| {
+        runs_state.current_run().map(|r| r.run_uuid.clone())
+    });
+
     // Initialize app with a clone of the initial state
     let initial_state = {
         let state_guard = state.lock().await;
         state_guard.clone()
     };
-    let mut app = App::new(initial_state);
+    let mut app = App::with_options(
+        initial_state,
+        args.all_jobs,
+        runs_state.runs.clone(),
+        selected_run,
+    );
     app.update_job_list();
 
     // Setup terminal

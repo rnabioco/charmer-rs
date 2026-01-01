@@ -9,11 +9,15 @@ use chrono::Utc;
 pub fn merge_slurm_jobs(state: &mut PipelineState, jobs: Vec<SlurmJob>, from_sacct: bool) {
     for slurm_job in jobs {
         // Try to parse rule info from comment
-        let (rule, wildcards) = slurm_job
+        let parsed = slurm_job
             .comment
             .as_ref()
-            .and_then(|c| parse_slurm_comment(c))
-            .unwrap_or_else(|| (slurm_job.name.clone(), None));
+            .and_then(|c| parse_slurm_comment(c));
+
+        // Job is a snakemake job if comment parsing succeeded (has rule_ prefix)
+        let is_snakemake_job = parsed.is_some();
+
+        let (rule, wildcards) = parsed.unwrap_or_else(|| (slurm_job.name.clone(), None));
 
         let job_id = make_job_id(&rule, wildcards.as_deref());
 
@@ -83,6 +87,7 @@ pub fn merge_slurm_jobs(state: &mut PipelineState, jobs: Vec<SlurmJob>, from_sac
                     has_lsf_bhist: false,
                 },
                 is_target: false,
+                is_snakemake_job,
             };
 
             let rule_name = job.rule.clone();

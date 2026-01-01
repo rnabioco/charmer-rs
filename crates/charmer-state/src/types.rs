@@ -509,6 +509,9 @@ pub struct Job {
 
     /// Whether this is a target rule (no outputs, like "all")
     pub is_target: bool,
+
+    /// Whether this job is from snakemake (has snakemake metadata or rule_ prefix in scheduler comment)
+    pub is_snakemake_job: bool,
 }
 
 /// Pipeline-level state.
@@ -610,6 +613,7 @@ impl PipelineState {
                     container_img_url: None,
                     data_sources: DataSources::default(),
                     is_target: true,
+                    is_snakemake_job: true, // Target rules from snakemake log are snakemake jobs
                 };
                 self.jobs.insert(job_id.clone(), job);
                 self.jobs_by_rule.insert(rule.clone(), vec![job_id]);

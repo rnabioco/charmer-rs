@@ -26,4 +26,12 @@ pub struct Args {
     /// Show completed jobs from last N hours
     #[arg(long, default_value = "24")]
     pub history_hours: u64,
+
+    /// Show all SLURM jobs, not just snakemake jobs
+    #[arg(long, default_value = "false")]
+    pub all_jobs: bool,
+
+    /// List recent runs and exit
+    #[arg(long)]
+    pub list_runs: bool,
 }
