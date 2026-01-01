@@ -59,3 +59,22 @@ charmer-state = { path = "crates/charmer-state" }
 charmer-monitor = { path = "crates/charmer-monitor" }
 charmer-cli = { path = "crates/charmer-cli" }
 charmer-runs = { path = "crates/charmer-runs" }
+
+# Optimize release builds for size and performance
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Faster debug builds with optimized dependencies
+[profile.dev.package."*"]
+opt-level = 2
+
+# Profile for maximum size reduction (use with --profile release-small)
+[profile.release-small]
+inherits = "release"
+opt-level = "z"
+lto = true
+strip = true
