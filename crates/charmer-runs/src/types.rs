@@ -138,7 +138,8 @@ impl RunsState {
             self.runs.push(run);
         }
         // Sort by last_updated descending
-        self.runs.sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
+        self.runs
+            .sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
         // Keep only last N runs
         self.runs.truncate(Self::MAX_RUNS);
     }

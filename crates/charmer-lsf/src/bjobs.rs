@@ -2,8 +2,8 @@
 
 use crate::types::{LsfJob, LsfJobState};
 use charmer_parsers::{
-    non_empty_string, parse_lsf_timestamp, parse_memory_mb, run_command_allow_failure,
-    split_delimited, MemoryFormat,
+    MemoryFormat, non_empty_string, parse_lsf_timestamp, parse_memory_mb,
+    run_command_allow_failure, split_delimited,
 };
 use std::time::Duration;
 use thiserror::Error;

@@ -7,7 +7,7 @@ pub mod bjobs;
 pub mod failure;
 pub mod types;
 
-pub use bhist::{query_bhist, BhistError};
-pub use bjobs::{query_bjobs, BjobsError};
-pub use failure::{analyze_failure, FailureAnalysis, FailureError, FailureMode};
+pub use bhist::{BhistError, query_bhist};
+pub use bjobs::{BjobsError, query_bjobs};
+pub use failure::{FailureAnalysis, FailureError, FailureMode, analyze_failure};
 pub use types::{LsfJob, LsfJobState};

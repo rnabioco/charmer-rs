@@ -3,11 +3,11 @@
 use charmer_state::{EnvType, ExecutionEnvironment, FailureMode, Job, JobStatus, PipelineState};
 use chrono::Utc;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 
 /// Color palette for wildcard values (matches job_list.rs).

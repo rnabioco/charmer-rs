@@ -2,8 +2,8 @@
 
 use crate::types::{SlurmJob, SlurmJobState};
 use charmer_parsers::{
-    non_empty_string, parse_duration, parse_duration_secs, parse_exit_code, parse_memory_mb,
-    parse_slurm_timestamp, run_command, split_delimited, MemoryFormat,
+    MemoryFormat, non_empty_string, parse_duration, parse_duration_secs, parse_exit_code,
+    parse_memory_mb, parse_slurm_timestamp, run_command, split_delimited,
 };
 use chrono::{DateTime, Utc};
 use std::time::Duration;
@@ -20,8 +20,7 @@ pub enum SacctError {
 
 /// sacct output format (--parsable2 uses | delimiter)
 /// JobIDRaw, JobName, State, Partition, Submit, Start, End, NodeList, AllocCPUS, ReqMem, Timelimit, Comment, ExitCode
-const SACCT_FORMAT: &str =
-    "JobIDRaw,JobName,State,Partition,Submit,Start,End,NodeList,AllocCPUS,ReqMem,Timelimit,Comment,ExitCode";
+const SACCT_FORMAT: &str = "JobIDRaw,JobName,State,Partition,Submit,Start,End,NodeList,AllocCPUS,ReqMem,Timelimit,Comment,ExitCode";
 
 /// Parse sacct state string with exit code info.
 fn parse_state(state_str: &str, exit_code_str: &str) -> SlurmJobState {

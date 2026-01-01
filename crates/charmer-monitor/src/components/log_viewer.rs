@@ -1,11 +1,11 @@
 //! Log viewer component for displaying job log files.
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
-    Frame,
 };
 use std::fs;
 use std::io;

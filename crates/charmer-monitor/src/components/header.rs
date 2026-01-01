@@ -3,11 +3,11 @@
 use charmer_state::PipelineState;
 use chrono::Local;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 
 pub struct Header;

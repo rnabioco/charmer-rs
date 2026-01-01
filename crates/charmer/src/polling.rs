@@ -3,8 +3,8 @@
 use charmer_lsf::{query_bhist, query_bjobs};
 use charmer_slurm::{query_resource_usage, query_sacct, query_squeue};
 use charmer_state::{
-    merge_lsf_jobs, merge_slurm_jobs, FailureAnalysis, FailureMode, JobStatus, PipelineState,
-    ResourceUsage,
+    FailureAnalysis, FailureMode, JobStatus, PipelineState, ResourceUsage, merge_lsf_jobs,
+    merge_slurm_jobs,
 };
 use chrono::Utc;
 use std::sync::Arc;
@@ -226,24 +226,24 @@ impl PollingService {
 
         // Analyze each failed job
         for (job_id, scheduler_job_id) in jobs_needing_analysis {
-            if let Ok(analysis) = charmer_slurm::analyze_failure(&scheduler_job_id).await {
-                if let Some(job) = state.jobs.get_mut(&job_id) {
-                    // Convert SLURM analysis to unified format
-                    let unified_analysis = convert_slurm_analysis(&analysis);
+            if let Ok(analysis) = charmer_slurm::analyze_failure(&scheduler_job_id).await
+                && let Some(job) = state.jobs.get_mut(&job_id)
+            {
+                // Convert SLURM analysis to unified format
+                let unified_analysis = convert_slurm_analysis(&analysis);
 
-                    if let Some(ref mut error) = job.error {
-                        error.analysis = Some(unified_analysis);
-                    } else {
-                        // Create error with analysis
-                        job.error = Some(charmer_state::JobError {
-                            exit_code: match &analysis.mode {
-                                charmer_slurm::FailureMode::ExitCode { code, .. } => *code,
-                                _ => -1,
-                            },
-                            message: analysis.explanation.clone(),
-                            analysis: Some(unified_analysis),
-                        });
-                    }
+                if let Some(ref mut error) = job.error {
+                    error.analysis = Some(unified_analysis);
+                } else {
+                    // Create error with analysis
+                    job.error = Some(charmer_state::JobError {
+                        exit_code: match &analysis.mode {
+                            charmer_slurm::FailureMode::ExitCode { code, .. } => *code,
+                            _ => -1,
+                        },
+                        message: analysis.explanation.clone(),
+                        analysis: Some(unified_analysis),
+                    });
                 }
             }
         }
@@ -267,14 +267,14 @@ impl PollingService {
 
         // Query resource usage for each job
         for (job_id, scheduler_job_id) in jobs_needing_usage {
-            if let Ok(Some(usage)) = query_resource_usage(&scheduler_job_id).await {
-                if let Some(job) = state.jobs.get_mut(&job_id) {
-                    job.usage = Some(ResourceUsage {
-                        max_rss_mb: usage.max_rss_mb,
-                        elapsed_seconds: usage.elapsed_seconds,
-                        cpu_time_seconds: usage.cpu_time_seconds,
-                    });
-                }
+            if let Ok(Some(usage)) = query_resource_usage(&scheduler_job_id).await
+                && let Some(job) = state.jobs.get_mut(&job_id)
+            {
+                job.usage = Some(ResourceUsage {
+                    max_rss_mb: usage.max_rss_mb,
+                    elapsed_seconds: usage.elapsed_seconds,
+                    cpu_time_seconds: usage.cpu_time_seconds,
+                });
             }
         }
     }
@@ -300,24 +300,24 @@ impl PollingService {
 
         // Analyze each failed job
         for (job_id, lsf_job_id) in jobs_needing_analysis {
-            if let Ok(analysis) = charmer_lsf::analyze_failure(&lsf_job_id).await {
-                if let Some(job) = state.jobs.get_mut(&job_id) {
-                    // Convert LSF analysis to unified format
-                    let unified_analysis = convert_lsf_analysis(&analysis);
+            if let Ok(analysis) = charmer_lsf::analyze_failure(&lsf_job_id).await
+                && let Some(job) = state.jobs.get_mut(&job_id)
+            {
+                // Convert LSF analysis to unified format
+                let unified_analysis = convert_lsf_analysis(&analysis);
 
-                    if let Some(ref mut error) = job.error {
-                        error.analysis = Some(unified_analysis);
-                    } else {
-                        // Create error with analysis
-                        job.error = Some(charmer_state::JobError {
-                            exit_code: match &analysis.mode {
-                                charmer_lsf::FailureMode::ExitCode { code, .. } => *code,
-                                _ => -1,
-                            },
-                            message: analysis.explanation.clone(),
-                            analysis: Some(unified_analysis),
-                        });
-                    }
+                if let Some(ref mut error) = job.error {
+                    error.analysis = Some(unified_analysis);
+                } else {
+                    // Create error with analysis
+                    job.error = Some(charmer_state::JobError {
+                        exit_code: match &analysis.mode {
+                            charmer_lsf::FailureMode::ExitCode { code, .. } => *code,
+                            _ => -1,
+                        },
+                        message: analysis.explanation.clone(),
+                        analysis: Some(unified_analysis),
+                    });
                 }
             }
         }

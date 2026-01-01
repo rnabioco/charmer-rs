@@ -7,8 +7,8 @@ pub mod command;
 pub mod memory;
 pub mod time;
 
-pub use command::{run_command, run_command_allow_failure, CommandError};
-pub use memory::{parse_memory_mb, MemoryFormat};
+pub use command::{CommandError, run_command, run_command_allow_failure};
+pub use memory::{MemoryFormat, parse_memory_mb};
 pub use time::{
     format_duration, format_duration_lsf, format_duration_slurm, parse_duration,
     parse_duration_secs, parse_exit_code, parse_lsf_timestamp, parse_slurm_timestamp,

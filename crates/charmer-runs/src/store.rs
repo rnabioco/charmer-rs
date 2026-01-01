@@ -78,7 +78,10 @@ mod tests {
         let store = RunStore::new(working_dir);
 
         let mut state = RunsState::default();
-        state.upsert_run(RunInfo::new("test-run".to_string(), working_dir.to_path_buf()));
+        state.upsert_run(RunInfo::new(
+            "test-run".to_string(),
+            working_dir.to_path_buf(),
+        ));
 
         store.save(&state).unwrap();
         assert!(store.path().exists());

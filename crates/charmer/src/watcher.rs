@@ -3,7 +3,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use miette::{IntoDiagnostic, Result};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
 /// Events from the file watcher.
@@ -128,10 +128,10 @@ fn handle_event(event: Event, tx: &Sender<WatcherEvent>, metadata_dir: &Utf8Path
                 // Check if this is a metadata file
                 if path.starts_with(metadata_dir) && path.is_file() {
                     // Skip hidden files
-                    if let Some(name) = path.file_name() {
-                        if name.starts_with('.') {
-                            continue;
-                        }
+                    if let Some(name) = path.file_name()
+                        && name.starts_with('.')
+                    {
+                        continue;
                     }
 
                     let _ = tx.send(WatcherEvent::MetadataFile(path));

@@ -11,6 +11,6 @@ pub use merge::{
 };
 pub use types::{
     DataSources, EnvType, ExecutionEnvironment, FailureAnalysis, FailureMode, Job, JobCounts,
-    JobError, JobResources, JobStatus, JobTiming, PipelineError, PipelineErrorType, PipelineState,
-    ResourceUsage, MAIN_PIPELINE_JOB_ID,
+    JobError, JobResources, JobStatus, JobTiming, MAIN_PIPELINE_JOB_ID, PipelineError,
+    PipelineErrorType, PipelineState, ResourceUsage,
 };

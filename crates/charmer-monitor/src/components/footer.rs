@@ -1,11 +1,11 @@
 //! Footer component with keyboard shortcuts and status messages.
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
-    Frame,
 };
 
 /// Version from Cargo.toml

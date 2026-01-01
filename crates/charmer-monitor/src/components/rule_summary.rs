@@ -4,13 +4,13 @@ use crate::app::ViewMode;
 use crate::components::ViewTabs;
 use charmer_state::{JobStatus, PipelineState};
 use ratatui::{
+    Frame,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
     text::Span,
     widgets::{
         Block, Borders, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
     },
-    Frame,
 };
 
 /// Statistics for a single rule.

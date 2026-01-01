@@ -2,8 +2,8 @@
 
 use crate::types::{SlurmJob, SlurmJobState};
 use charmer_parsers::{
-    non_empty_string, parse_duration, parse_memory_mb, parse_slurm_timestamp, run_command,
-    split_delimited, MemoryFormat,
+    MemoryFormat, non_empty_string, parse_duration, parse_memory_mb, parse_slurm_timestamp,
+    run_command, split_delimited,
 };
 use std::time::Duration;
 use thiserror::Error;

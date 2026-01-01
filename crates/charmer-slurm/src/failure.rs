@@ -3,8 +3,8 @@
 //! Query detailed failure information and provide actionable suggestions.
 
 use charmer_parsers::{
-    format_duration, format_duration_slurm, parse_duration_secs, parse_memory_mb,
-    run_command_allow_failure, MemoryFormat,
+    MemoryFormat, format_duration, format_duration_slurm, parse_duration_secs, parse_memory_mb,
+    run_command_allow_failure,
 };
 use thiserror::Error;
 use tokio::process::Command;
@@ -108,9 +108,18 @@ impl FailureAnalysis {
             FailureMode::ExitCode { code, signal } => {
                 let explanation = if let Some(sig) = signal {
                     match sig {
-                        9 => format!("Job killed with signal {} (SIGKILL). Exit code: {}", sig, code),
-                        11 => format!("Job crashed with signal {} (SIGSEGV - segmentation fault). Exit code: {}", sig, code),
-                        15 => format!("Job terminated with signal {} (SIGTERM). Exit code: {}", sig, code),
+                        9 => format!(
+                            "Job killed with signal {} (SIGKILL). Exit code: {}",
+                            sig, code
+                        ),
+                        11 => format!(
+                            "Job crashed with signal {} (SIGSEGV - segmentation fault). Exit code: {}",
+                            sig, code
+                        ),
+                        15 => format!(
+                            "Job terminated with signal {} (SIGTERM). Exit code: {}",
+                            sig, code
+                        ),
                         _ => format!("Job exited with code {} and signal {}", code, sig),
                     }
                 } else {

@@ -5,12 +5,12 @@ use crate::components::{
 };
 use crate::ui::Theme;
 use charmer_runs::RunInfo;
-use charmer_state::{JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
+use charmer_state::{JobStatus, MAIN_PIPELINE_JOB_ID, PipelineState};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     widgets::Clear,
-    Frame,
 };
 use std::time::{Duration, Instant};
 
@@ -113,11 +113,11 @@ pub struct App {
     command_expanded: bool,                    // Whether command section is expanded in details
 
     // Run management
-    pub runs: Vec<RunInfo>,              // Available runs
-    pub selected_run: Option<String>,    // Currently selected run UUID
-    pub show_run_picker: bool,           // Whether run picker modal is open
-    pub run_picker_index: usize,         // Selected index in run picker
-    pub show_all_jobs: bool,             // Whether to show all jobs or just snakemake jobs
+    pub runs: Vec<RunInfo>,           // Available runs
+    pub selected_run: Option<String>, // Currently selected run UUID
+    pub show_run_picker: bool,        // Whether run picker modal is open
+    pub run_picker_index: usize,      // Selected index in run picker
+    pub show_all_jobs: bool,          // Whether to show all jobs or just snakemake jobs
 }
 
 impl App {
@@ -627,7 +627,10 @@ impl App {
                     if let Some(run) = self.runs.get(self.run_picker_index) {
                         self.selected_run = Some(run.run_uuid.clone());
                         self.status_message = Some((
-                            format!("Selected run: {}", &run.run_uuid[..8.min(run.run_uuid.len())]),
+                            format!(
+                                "Selected run: {}",
+                                &run.run_uuid[..8.min(run.run_uuid.len())]
+                            ),
                             Instant::now(),
                         ));
                     }
@@ -836,11 +839,7 @@ impl App {
                     &run.run_uuid
                 };
 
-                let jobs_str = format!(
-                    "{}/{}",
-                    run.completed_jobs,
-                    run.total_jobs.unwrap_or(0)
-                );
+                let jobs_str = format!("{}/{}", run.completed_jobs, run.total_jobs.unwrap_or(0));
 
                 let time_ago = format_time_ago(run.last_updated);
 

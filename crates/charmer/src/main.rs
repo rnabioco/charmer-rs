@@ -7,14 +7,14 @@ use charmer_cli::Args;
 use charmer_core::{parse_main_log, parse_metadata_file, scan_metadata_dir};
 use charmer_monitor::App;
 use charmer_runs::{RunStatus, RunStore};
-use charmer_state::{merge_snakemake_jobs, PipelineState};
+use charmer_state::{PipelineState, merge_snakemake_jobs};
 use clap::Parser;
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use miette::{IntoDiagnostic, Result};
-use polling::{init_polling, PollingConfig};
+use polling::{PollingConfig, init_polling};
 use ratatui::prelude::*;
 use std::collections::HashMap;
 use std::io;
@@ -98,9 +98,10 @@ async fn main() -> Result<()> {
     let _polling_handle = init_polling(Arc::clone(&state), poll_config).await;
 
     // Determine selected run (from args or auto-detect from runs state)
-    let selected_run = args.run_uuid.clone().or_else(|| {
-        runs_state.current_run().map(|r| r.run_uuid.clone())
-    });
+    let selected_run = args
+        .run_uuid
+        .clone()
+        .or_else(|| runs_state.current_run().map(|r| r.run_uuid.clone()));
 
     // Initialize app with a clone of the initial state
     let initial_state = {
@@ -199,10 +200,10 @@ async fn run_app(
                         let path_str = path.to_string();
                         let now = std::time::Instant::now();
 
-                        if let Some(last_time) = debounce_map.get(&path_str) {
-                            if now.duration_since(*last_time) < debounce_duration {
-                                continue; // Skip this event - too soon
-                            }
+                        if let Some(last_time) = debounce_map.get(&path_str)
+                            && now.duration_since(*last_time) < debounce_duration
+                        {
+                            continue; // Skip this event - too soon
                         }
 
                         debounce_map.insert(path_str, now);
@@ -242,11 +243,11 @@ async fn run_app(
             let working_dir = state_guard.working_dir.clone();
             drop(state_guard);
 
-            if let Ok(jobs) = scan_metadata_dir(&working_dir) {
-                if !jobs.is_empty() {
-                    let mut state_guard = shared_state.lock().await;
-                    merge_snakemake_jobs(&mut state_guard, jobs);
-                }
+            if let Ok(jobs) = scan_metadata_dir(&working_dir)
+                && !jobs.is_empty()
+            {
+                let mut state_guard = shared_state.lock().await;
+                merge_snakemake_jobs(&mut state_guard, jobs);
             }
             last_rescan = std::time::Instant::now();
         }

@@ -1,7 +1,7 @@
 //! Query LSF job history via bhist.
 
 use crate::types::{LsfJob, LsfJobState};
-use charmer_parsers::{parse_memory_mb, run_command_allow_failure, MemoryFormat};
+use charmer_parsers::{MemoryFormat, parse_memory_mb, run_command_allow_failure};
 use chrono::{DateTime, Utc};
 use std::time::Duration;
 use thiserror::Error;

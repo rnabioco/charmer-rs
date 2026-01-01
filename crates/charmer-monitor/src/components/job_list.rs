@@ -2,8 +2,9 @@
 
 use crate::app::ViewMode;
 use crate::components::ViewTabs;
-use charmer_state::{Job, JobCounts, JobStatus, PipelineState, MAIN_PIPELINE_JOB_ID};
+use charmer_state::{Job, JobCounts, JobStatus, MAIN_PIPELINE_JOB_ID, PipelineState};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -11,7 +12,6 @@ use ratatui::{
         Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Scrollbar,
         ScrollbarOrientation, ScrollbarState,
     },
-    Frame,
 };
 use std::collections::{HashMap, HashSet};
 

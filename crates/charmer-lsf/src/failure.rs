@@ -3,8 +3,8 @@
 //! Query detailed failure information and provide actionable suggestions.
 
 use charmer_parsers::{
-    format_duration, format_duration_lsf, parse_duration_secs, parse_memory_mb,
-    run_command_allow_failure, MemoryFormat,
+    MemoryFormat, format_duration, format_duration_lsf, parse_duration_secs, parse_memory_mb,
+    run_command_allow_failure,
 };
 use thiserror::Error;
 use tokio::process::Command;
