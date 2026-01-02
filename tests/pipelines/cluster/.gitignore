@@ -1,0 +1,9 @@
+# Snakemake outputs
+results/
+logs/
+.snakemake/
+
+# Cluster job outputs
+slurm-*.out
+*.o*
+*.e*

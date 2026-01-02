@@ -1,0 +1,63 @@
+# Snakemake SLURM Executor Profile Configuration
+# ================================================
+# This profile configures Snakemake to submit jobs to SLURM clusters
+# Usage: snakemake --profile cluster/slurm
+
+# Executor settings
+executor: slurm
+jobs: 50                       # Maximum concurrent jobs
+latency-wait: 60               # Wait time for output files (seconds)
+
+# Default resources for all rules
+default-resources:
+  slurm_partition: "amilan"    # Default CPU partition (Alpine)
+  slurm_account: "amc-general" # Alpine allocation account
+  slurm_qos: "normal"          # Default QoS
+  runtime: 30                  # Default walltime in minutes
+  mem_mb: 4000                 # Default memory in MB (4GB)
+  cpus_per_task: 1             # Default CPUs per task
+
+# Rule-specific resource overrides
+set-resources:
+  process_sample:
+    runtime: 10
+    mem_mb: 2000
+    cpus_per_task: 1
+
+  align_sample:
+    runtime: 15
+    mem_mb: 4000
+    cpus_per_task: 2
+
+  call_variants:
+    runtime: 20
+    mem_mb: 4000
+    cpus_per_task: 2
+
+  merge_sample_variants:
+    runtime: 10
+    mem_mb: 2000
+    cpus_per_task: 1
+
+  group_analysis:
+    runtime: 15
+    mem_mb: 4000
+    cpus_per_task: 2
+
+  final_merge:
+    runtime: 10
+    mem_mb: 2000
+    cpus_per_task: 1
+
+  generate_report:
+    runtime: 5
+    mem_mb: 1000
+    cpus_per_task: 1
+
+# Behavior settings
+rerun-incomplete: true
+keep-going: true
+
+# Output settings
+printshellcmds: true
+show-failed-logs: true
